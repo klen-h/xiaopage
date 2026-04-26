@@ -35,10 +35,9 @@ jobs:
       - name: 检查新视频并分析
         env:
           BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           BILI_UID: ${{ secrets.BILI_UID }}
         run: node scripts/analyze-video.js --check-new
 
