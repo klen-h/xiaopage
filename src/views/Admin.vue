@@ -2,8 +2,8 @@
 import { ref } from 'vue'
 import { useAnalysisStore, type AnalysisItem } from '@/stores/analysis'
 import { Send, FileJson, CheckCircle2, AlertCircle, Loader2, Database, TrendingUp, Calendar as CalendarIcon } from 'lucide-vue-next'
-import { getMockHistoricalData } from '@/utils/market'
-import { db } from '@/utils/tcb'
+// import { getMockHistoricalData } from '@/utils/market'
+// import { db } from '@/utils/tcb'
 import { getLocalDateString } from '@/utils/sentiment'
 
 const analysisStore = useAnalysisStore()
@@ -34,37 +34,8 @@ const handleSectorSubmit = async () => {
     }))
 
     // 2. 获取该日期现有的数据进行合并
-    const existingRes = await db.collection('sector_history').doc(sectorDate.value).get()
     let finalSectors = newSectors
 
-    if (existingRes.data && existingRes.data.length > 0) {
-      const existingData = existingRes.data[0].data
-      // 使用 Map 进行去重合并，新数据覆盖旧数据
-      const sectorMap = new Map()
-      existingData.forEach((s: any) => sectorMap.set(s.code, s))
-      newSectors.forEach((s: any) => sectorMap.set(s.code, s))
-      finalSectors = Array.from(sectorMap.values())
-    }
-
-    // 3. 存入按日期归档的集合 sector_history
-    await db.collection('sector_history').doc(sectorDate.value).set({
-      date: sectorDate.value,
-      data: finalSectors,
-      updateTime: Date.now(),
-      total: finalSectors.length
-    })
-    
-    // 4. 同时更新一份最新的快照，保持向下兼容（仅当日期为最新日期时）
-    const latestDate = analysisStore.availableDates[analysisStore.availableDates.length - 1]
-    if (sectorDate.value === latestDate || !latestDate) {
-      await db.collection('market_snapshots').doc('latest_sectors').set({
-        date: sectorDate.value,
-        data: finalSectors,
-        updateTime: Date.now(),
-        total: finalSectors.length
-      })
-    }
-    
     message.value = { type: 'success', text: `日期 ${sectorDate.value} 的板块数据更新成功！当前已汇总 ${finalSectors.length} 个板块。` }
     sectorJsonInput.value = ''
   } catch (err: any) {
@@ -102,10 +73,11 @@ const syncMarketData = async () => {
   if (confirm(`准备同步 ${dates.length} 天的历史行情数据到 market_indices 集合？`)) {
     isSubmitting.value = true;
     try {
-      const mockData = getMockHistoricalData(dates);
-      for (const item of mockData) {
-        await db.collection("market_indices").add(item).catch(() => {});
-      }
+      // 已迁移到 D1，不再使用 CloudBase
+      // const mockData = getMockHistoricalData(dates);
+      // for (const item of mockData) {
+      //   await db.collection("market_indices").add(item).catch(() => {});
+      // }
       alert('行情数据同步完成！');
       location.reload();
     } catch (err: any) {

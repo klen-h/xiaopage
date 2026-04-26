@@ -21,11 +21,10 @@ import {
   getSentimentColorClass, 
   getSentimentHexColor, 
   getSentimentDescription,
-  getLocalDateString,
-  getLocalTimestampString
+  getLocalDateString
 } from '@/utils/sentiment'
 import * as echarts from 'echarts'
-import { cloudbase } from '@/utils/tcb'
+// import { cloudbase } from '@/utils/tcb'
 
 const analysisStore = useAnalysisStore()
 const gaugeRef = ref<HTMLElement | null>(null)
@@ -92,56 +91,54 @@ const fetchOperationStats = async (date?: string) => {
   if (targetDate === '加载中...') return
 
   try {
-    const { data, error } = await cloudbase
-      .rdb()
-      .from("user_operations")
-      .select("*")
-      .eq("date", targetDate)
+    // 已迁移到 D1，不再使用 CloudBase
+    // const { data, error } = await cloudbase
+    //   .rdb()
+    //   .from("user_operations")
+    //   .select("*")
+    //   .eq("date", targetDate)
 
-    if (!error && data) {
-      console.log(`获取到的 ${targetDate} 操作数据:`, data);
-      const stats = { '加仓': 0, '减仓': 0, '持仓不动': 0, '清仓': 0, '满仓': 0 };
+    // if (!error && data) {
+    //   console.log(`获取到的 ${targetDate} 操作数据:`, data);
+    //   const stats = { '加仓': 0, '减仓': 0, '持仓不动': 0, '清仓': 0, '满仓': 0 };
       
-      data.forEach((item: any) => {
-        if (item.date === targetDate && stats.hasOwnProperty(item.operation)) {
-          stats[item.operation as keyof typeof stats]++;
-        }
-      });
-      
-      operationStats.value = stats;
-      // 在 nextTick 后更新图表，确保容器已渲染
-      nextTick(() => updatePieChart());
-    } else if (error) {
-      console.error('获取操作统计失败 (API 错误):', error);
-    }
+    //   data.forEach((item: any) => {
+    //     if (item.date === targetDate && stats.hasOwnProperty(item.operation)) {
+    //       stats[item.operation as keyof typeof stats]++;
+    //     }
+    //   });
+    const stats = { '加仓': 0, '减仓': 0, '持仓不动': 0, '清仓': 0, '满仓': 0 };
+    operationStats.value = stats;
+    // 在 nextTick 后更新图表，确保容器已渲染
+    nextTick(() => updatePieChart());
   } catch (err) {
     console.error('获取操作统计发生异常:', err);
   }
 }
 
 // 提交用户操作
-const handleVote = async (op: string) => {
+const handleVote = async (_op: string) => {
   if (userVoted.value || !isToday.value || !isTradingDay.value) return;
   try {
-    const timestamp = getLocalTimestampString();
-    
-    const { error } = await cloudbase
-      .rdb()
-      .from("user_operations")
-      .insert({
-        operation: op,
-        date: realTodayDate,
-        timestamp: timestamp
-      });
+    // 已迁移到 D1，不再使用 CloudBase
+    // const timestamp = getLocalTimestampString();
+    // const { error } = await cloudbase
+    //   .rdb()
+    //   .from("user_operations")
+    //   .insert({
+    //     operation: op,
+    //     date: realTodayDate,
+    //     timestamp: timestamp
+    //   });
 
-    if (!error) {
-      console.log("新增成功");
-      userVoted.value = true;
-      localStorage.setItem(`voted_${realTodayDate}`, 'true');
-      await fetchOperationStats(realTodayDate);
-    } else {
-      console.error("提交操作失败 (API 错误):", error);
-    }
+    // if (!error) {
+    //   console.log("新增成功");
+    //   userVoted.value = true;
+    //   localStorage.setItem(`voted_${realTodayDate}`, 'true');
+    //   await fetchOperationStats(realTodayDate);
+    // } else {
+    //   console.error("提交操作失败 (API 错误):", error);
+    // }
   } catch (err) {
     console.error('提交操作发生异常:', err);
   }

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getLocalDateString } from '@/utils/sentiment'
-import { db } from '@/utils/tcb'
+// import { db } from '@/utils/tcb'
 
 export interface MarketIndex {
   date: string;
@@ -135,16 +135,16 @@ export const fetchStockFlow = async (code: string): Promise<StockFlow | null> =>
  */
 export const fetchSectorHeatmapByDate = async (date: string): Promise<{ data: SectorItem[], updateTime: number | null }> => {
   try {
+    // 已迁移到 D1，不再使用 CloudBase
     // 优先尝试从 sector_history 集合按日期读取
-    const res = await db.collection('sector_history').doc(date).get();
-    
-    if (res.data && res.data.length > 0) {
-      const snapshot = res.data[0];
-      return {
-        data: snapshot.data,
-        updateTime: snapshot.updateTime || null
-      };
-    }
+    // const res = await db.collection('sector_history').doc(date).get();
+    // if (res.data && res.data.length > 0) {
+    //   const snapshot = res.data[0];
+    //   return {
+    //     data: snapshot.data,
+    //     updateTime: snapshot.updateTime || null
+    //   };
+    // }
     return { data: [], updateTime: null };
   } catch (err) {
     console.error(`获取日期 ${date} 的板块快照失败:`, err);
@@ -157,15 +157,15 @@ export const fetchSectorHeatmapByDate = async (date: string): Promise<{ data: Se
  */
 export const fetchSectorHeatmap = async (): Promise<{ data: SectorItem[], updateTime: number | null }> => {
   try {
-    const res = await db.collection('market_snapshots').doc('latest_sectors').get();
-    
-    if (res.data && res.data.length > 0) {
-      const snapshot = res.data[0];
-      return {
-        data: snapshot.data,
-        updateTime: snapshot.updateTime || null
-      };
-    }
+    // 已迁移到 D1，不再使用 CloudBase
+    // const res = await db.collection('market_snapshots').doc('latest_sectors').get();
+    // if (res.data && res.data.length > 0) {
+    //   const snapshot = res.data[0];
+    //   return {
+    //     data: snapshot.data,
+    //     updateTime: snapshot.updateTime || null
+    //   };
+    // }
     return { data: [], updateTime: null };
   } catch (err) {
     console.error('从云端获取最新板块快照失败:', err);

@@ -23,10 +23,10 @@ import {
   Loader2,
   CheckCircle2
 } from 'lucide-vue-next'
-import { cloudbase } from '@/utils/tcb'
-import { 
-  getLocalTimestampString
-} from '@/utils/sentiment'
+// import { cloudbase } from '@/utils/tcb'
+// import { 
+//   getLocalTimestampString
+// } from '@/utils/sentiment'
 
 const router = useRouter()
 const route = useRoute()
@@ -47,28 +47,28 @@ const submitFeedback = async () => {
   
   isSubmitting.value = true
   try {
-    const timestamp = getLocalTimestampString()
-    
-    const { error } = await cloudbase
-      .rdb()
-      .from("user_feedback")
-      .insert({
-        content: feedbackContent.value,
-        timestamp: timestamp,
-        device: window.navigator.userAgent,
-        page: route.path
-      })
+    // 已迁移到 D1，不再使用 CloudBase
+    // const timestamp = getLocalTimestampString()
+    // const { error } = await cloudbase
+    //   .rdb()
+    //   .from("user_feedback")
+    //   .insert({
+    //     content: feedbackContent.value,
+    //     timestamp: timestamp,
+    //     device: window.navigator.userAgent,
+    //     page: route.path
+    //   })
 
-    if (!error) {
-      submitSuccess.value = true
-      feedbackContent.value = ''
-      setTimeout(() => {
-        isFeedbackModalOpen.value = false
-        submitSuccess.value = false
-      }, 2000)
-    } else {
-      alert('提交失败，请稍后再试')
-    }
+    // if (!error) {
+    //   submitSuccess.value = true
+    //   feedbackContent.value = ''
+    //   setTimeout(() => {
+    //     isFeedbackModalOpen.value = false
+    //     submitSuccess.value = false
+    //   }, 2000)
+    // } else {
+    //   alert('提交失败，请稍后再试')
+    // }
   } catch (err) {
     console.error('提交反馈异常:', err)
     alert('提交过程发生错误')
