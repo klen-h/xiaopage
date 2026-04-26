@@ -9,8 +9,8 @@ import {
   AlertCircle, 
   Loader2, 
   MousePointer2,
-  Activity,
-  Target,
+  // Activity,
+  // Target,
   Brain,
   TrendingUp,
   TrendingDown,
@@ -389,25 +389,25 @@ const goToPrevDay = () => {
   }
 }
 
-const formatUpdateTime = (ts: number | null) => {
-  if (!ts) return ''
-  const date = new Date(ts)
-  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
-}
+// const formatUpdateTime = (ts: number | null) => {
+//   if (!ts) return ''
+//   const date = new Date(ts)
+//   return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+// }
 
 // 统一由 utils/sentiment 提供逻辑，移除组件内的冗余代码
-const sectorsWithPerformance = computed(() => {
-  const daySectors = [...new Set(videosForDay.value.flatMap(v => v.structured.sectors || []))]
-  return daySectors.map(name => {
-    // 优先全等于，其次包含关系
-    const performance = analysisStore.sectorPerformance.find(p => p.name === name) || 
-                        analysisStore.sectorPerformance.find(p => p.name.includes(name) || name.includes(p.name))
-    return {
-      name,
-      performance: performance || null
-    }
-  }).sort((a, b) => (b.performance?.changePercent || 0) - (a.performance?.changePercent || 0))
-})
+// const sectorsWithPerformance = computed(() => {
+//   const daySectors = [...new Set(videosForDay.value.flatMap(v => v.structured.sectors || []))]
+//   return daySectors.map(name => {
+//     // 优先全等于，其次包含关系
+//     const performance = analysisStore.sectorPerformance.find(p => p.name === name) || 
+//                         analysisStore.sectorPerformance.find(p => p.name.includes(name) || name.includes(p.name))
+//     return {
+//       name,
+//       performance: performance || null
+//     }
+//   }).sort((a, b) => (b.performance?.changePercent || 0) - (a.performance?.changePercent || 0))
+// })
 </script>
 
 <template>

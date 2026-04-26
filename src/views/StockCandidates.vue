@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 // import { fetchAutomationData } from '@/api/github'
-import candidatesDebug from '../../lishaoxia-value-detector/data/stocks/candidates_debug.json'
+// import candidatesDebug from '../../lishaoxia-value-detector/data/stocks/candidates_debug.json'
 
 import { 
   Search, 
   Activity, 
   BarChart3, 
-  RefreshCw, 
+  // RefreshCw, 
   ChevronRight,
-  TrendingUp,
-  TrendingDown,
+  // TrendingUp,
+  // TrendingDown,
   Info
 } from 'lucide-vue-next'
-import { presetStocks } from '@/constants/stocks'
+// import { presetStocks } from '@/constants/stocks'
 
 const searchQuery = ref('')
 const isLoading = ref(false)
@@ -22,28 +22,28 @@ const debugData = ref<any>(null)
 const activeType = ref<'VALUE' | 'GROWTH'>('VALUE')
 
 // 加载初筛调试数据
-const loadDebugData = async () => {
-  isLoading.value = true
-  error.value = ''
-  try {
-    const data = candidatesDebug
-    if (data) {
-      console.log(data.update_time)
-      debugData.value = data
-    } else {
-      error.value = '未能加载到初筛数据，请检查脚本运行状态。'
-    }
-  } catch (err) {
-    console.error('获取数据失败:', err)
-    error.value = '获取数据失败，请稍后再试。'
-  } finally {
-    isLoading.value = false
-  }
-}
+// const loadDebugData = async () => {
+//   isLoading.value = true
+//   error.value = ''
+//   try {
+//     const data = candidatesDebug
+//     if (data) {
+//       console.log(data.update_time)
+//       debugData.value = data
+//     } else {
+//       error.value = '未能加载到初筛数据，请检查脚本运行状态。'
+//     }
+//   } catch (err) {
+//     console.error('获取数据失败:', err)
+//     error.value = '获取数据失败，请稍后再试。'
+//   } finally {
+//     isLoading.value = false
+//   }
+// }
 
-onMounted(() => {
-  loadDebugData()
-})
+// onMounted(() => {
+//   loadDebugData()
+// })
 
 // 放宽条件的过滤逻辑 (李大霄式备选池)
 const filteredStocks = computed(() => {
@@ -170,14 +170,14 @@ const formatMV = (mv: number) => {
         >
       </div>
 
-      <button 
+      <!-- <button 
         @click="loadDebugData"
         :disabled="isLoading"
         class="flex items-center space-x-2 px-4 py-2.5 bg-gray-50 text-gray-600 rounded-xl font-bold hover:bg-gray-100 transition-all text-xs"
       >
         <RefreshCw :class="['w-4 h-4', isLoading ? 'animate-spin' : '']" />
         <span>{{ isLoading ? '刷新中...' : '同步实时初筛' }}</span>
-      </button>
+      </button> -->
     </div>
 
     <!-- Stats Info -->

@@ -87,7 +87,7 @@ onMounted(async () => {
 const warningSignal = computed(() => {
   if (!state.quote) return null
   
-  const { pe, pb, price, high52, low52, changePercent } = state.quote
+  const { pe, /* pb, */ price, high52, low52 /* , changePercent */ } = state.quote
   const isBull = marketTrend.value === 'BULL'
   
   // 1. 抄底预警 (Diamond Bottom)
