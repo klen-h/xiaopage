@@ -23,22 +23,27 @@ const viewMode = ref<'grid' | 'list'>('grid')
 const videos = computed(() => analysisStore.videos)
 
 const filteredVideos = computed(() => {
-  return videos.value.filter(video => {
-    const matchesSearch = video.title.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
-                         video.summary.toLowerCase().includes(searchQuery.value.toLowerCase())
-    
-    // 逻辑对齐 6 级情绪体系：
-    // 乐观信号：谨慎偏多(46-55) + 乐观(56-75)
-    // 风险提示：极度恐慌(0-15) + 悲观(16-35) + 谨慎偏空(36-45) + 极度狂热(76-100, 泡沫顶部)
-    const score = video.sentiment_score
-    const isOptimistic = score >= 46 && score <= 75
-    const isCaution = score <= 45 || score >= 76
-    
-    const matchesFilter = activeFilter.value === 'all' || 
-                         (activeFilter.value === 'optimistic' && isOptimistic) ||
-                         (activeFilter.value === 'caution' && isCaution)
-    return matchesSearch && matchesFilter
-  })
+  return videos.value
+    .filter(video => {
+      const matchesSearch = video.title.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+                           video.summary.toLowerCase().includes(searchQuery.value.toLowerCase())
+
+      // 逻辑对齐 6 级情绪体系：
+      // 乐观信号：谨慎偏多(46-55) + 乐观(56-75)
+      // 风险提示：极度恐慌(0-15) + 悲观(16-35) + 谨慎偏空(36-45) + 极度狂热(76-100, 泡沫顶部)
+      const score = video.sentiment_score
+      const isOptimistic = score >= 46 && score <= 75
+      const isCaution = score <= 45 || score >= 76
+
+      const matchesFilter = activeFilter.value === 'all' ||
+                           (activeFilter.value === 'optimistic' && isOptimistic) ||
+                           (activeFilter.value === 'caution' && isCaution)
+      return matchesSearch && matchesFilter
+    })
+    .sort((a, b) => {
+      // 按时间倒序排列（最新的在前）
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    })
 })
 
 // 移除本地 getSentimentColor，改用统一工具类
