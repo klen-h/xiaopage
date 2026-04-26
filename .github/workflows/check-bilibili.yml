@@ -1,0 +1,52 @@
+name: 检查B站新视频
+
+on:
+  schedule:
+    # 北京时间7:00-1:00每小时执行（UTC时间23:00-17:00）
+    - cron: '0 23,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 * * *'
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  check-new-videos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 允许提交更改
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 yt-dlp
+        run: |
+          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: 安装 ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: 检查新视频并分析
+        env:
+          BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          BILI_UID: ${{ secrets.BILI_UID }}
+        run: node scripts/analyze-video.js --check-new
+
+      - name: 提交更新
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add public/data/videos.json
+          git diff --staged --quiet || git commit -m "📊 更新视频分析数据 $(date +'%Y-%m-%d %H:%M')"
+          git push

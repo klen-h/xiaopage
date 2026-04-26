@@ -1,0 +1,40 @@
+name: Auto Analyze Li Daxiao Videos
+
+on:
+  schedule:
+    - cron: '0 */4 * * *' # 每 4 小时运行一次
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          pip install yt-dlp openai-whisper openai
+
+      - name: Run analysis script
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: python lishaoxia-value-detector/scripts/auto_analyze_video.py
+
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data/video_analysis/*.json
+          git commit -m "Auto-update video analysis [skip ci]" || exit 0
+          git push
