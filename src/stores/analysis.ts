@@ -70,20 +70,26 @@ export const useAnalysisStore = defineStore('analysis', {
         await login();
         
         // 1. 加载视频数据
-        const res = await db.collection("analysis_items")
-          .orderBy("date", "desc")
-          .limit(1000)
-          .get();
+        // const res = await db.collection("analysis_items")
+        //   .orderBy("date", "desc")
+        //   .limit(1000)
+        //   .get();
 
-        if (res.data && res.data.length > 0) {
-          this.videos = res.data as AnalysisItem[];
-        } else {
-          // 兜底本地 JSON
-          const baseUrl = import.meta.env.BASE_URL || '/'
-          const resLocal = await fetch(`${baseUrl}data/videos.json?t=${Date.now()}`)
-          if (resLocal.ok) {
-            this.videos = await resLocal.json()
-          }
+        // if (res.data && res.data.length > 0) {
+        //   this.videos = res.data as AnalysisItem[];
+        // } else {
+        //   // 兜底本地 JSON
+        //   const baseUrl = import.meta.env.BASE_URL || '/'
+        //   const resLocal = await fetch(`${baseUrl}data/videos.json?t=${Date.now()}`)
+        //   if (resLocal.ok) {
+        //     this.videos = await resLocal.json()
+        //   }
+        // }
+        // 兜底本地 JSON
+        const baseUrl = import.meta.env.BASE_URL || '/'
+        const resLocal = await fetch(`${baseUrl}data/videos.json?t=${Date.now()}`)
+        if (resLocal.ok) {
+          this.videos = await resLocal.json()
         }
 
         // 2. 加载指数数据 (从 market_indices 集合)
