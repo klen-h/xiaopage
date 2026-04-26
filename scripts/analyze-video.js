@@ -118,15 +118,16 @@ async function checkAndProcessNewVideos() {
       );
       title = videoRes.data?.data?.title;
       duration = videoRes.data?.data?.duration; // 时长（秒）
-      const pubdate = videoRes.data?.data?.pubdate || videoRes.data?.data?.ctime; // 获取时间戳
-      // 将时间戳转换为 YYYY-MM-DD HH:MM 格式
+      const pubdate = videoRes.data?.data?.pubdate || videoRes.data?.data?.ctime; // 获取时间戳（UTC）
+      // 将时间戳转换为 YYYY-MM-DD HH:MM 格式（北京时间 UTC+8）
       if (pubdate) {
-        const dateObj = new Date(pubdate * 1000); // B站时间戳是秒，需要转换为毫秒
-        const year = dateObj.getFullYear();
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const day = String(dateObj.getDate()).padStart(2, '0');
-        const hours = String(dateObj.getHours()).padStart(2, '0');
-        const minutes = String(dateObj.getMinutes()).padStart(2, '0');
+        // B站时间戳是UTC，需要加上8小时转换为北京时间
+        const dateObj = new Date((pubdate + 8 * 3600) * 1000);
+        const year = dateObj.getUTCFullYear();
+        const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getUTCDate()).padStart(2, '0');
+        const hours = String(dateObj.getUTCHours()).padStart(2, '0');
+        const minutes = String(dateObj.getUTCMinutes()).padStart(2, '0');
         formattedDate = `${year}-${month}-${day} ${hours}:${minutes}`;
       }
     } catch {

@@ -38,19 +38,6 @@ jobs:
           BILI_UID: ${{ secrets.BILI_UID }}
         run: node scripts/analyze-video.js --check-new
 
-      - name: 安装 wrangler
-        run: npm install -g wrangler
-
-      - name: 写入数据到 D1
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # 清空现有数据
-          wrangler d1 execute xiaopage-db --remote --command="DELETE FROM videos"
-          # 批量插入新数据
-          node scripts/sync-to-d1.js
-
       - name: 提交更新
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
