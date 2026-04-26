@@ -17,7 +17,6 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
-// import FormData from 'form-data';
 import 'dotenv/config';
 
 // ==================== 配置区域 ====================
@@ -82,7 +81,7 @@ async function checkAndProcessNewVideos() {
   let output;
   try {
     output = execSync(
-      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 19 "${spaceUrl}"`,
+      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 3 "${spaceUrl}"`,
       { encoding: 'utf-8', timeout: 60000 }
     ).trim();
   } catch (error) {
