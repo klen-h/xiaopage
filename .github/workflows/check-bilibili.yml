@@ -29,9 +29,6 @@ jobs:
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      - name: 安装 ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
       - name: 检查新视频并分析
         env:
           BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
