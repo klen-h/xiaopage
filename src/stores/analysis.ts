@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { db, login } from '@/utils/tcb'
+import { fetchVideosFromD1 } from '@/api/d1'
 import { fetchSSEIndexCurrent, fetchSectorHeatmap, fetchSectorHeatmapByDate, type MarketIndex, type SectorItem } from '@/utils/market'
 import { getLocalDateString } from '@/utils/sentiment'
 
@@ -67,57 +67,28 @@ export const useAnalysisStore = defineStore('analysis', {
       this.isLoading = true
       this.error = null
       try {
-        await login();
-        
-        // 1. 加载视频数据
-        // const res = await db.collection("analysis_items")
-        //   .orderBy("date", "desc")
+        // 1. 加载视频数据 - 优先从 D1，降级到本地 JSON
+        this.videos = await fetchVideosFromD1()
+
+        // 2. 加载指数数据 (从 market_indices 集合)
+        // const marketRes = await db.collection("market_indices")
+        //   .orderBy("date", "asc")
         //   .limit(1000)
         //   .get();
 
-        // if (res.data && res.data.length > 0) {
-        //   this.videos = res.data as AnalysisItem[];
-        // } else {
-        //   // 兜底本地 JSON
-        //   const baseUrl = import.meta.env.BASE_URL || '/'
-        //   const resLocal = await fetch(`${baseUrl}data/videos.json?t=${Date.now()}`)
-        //   if (resLocal.ok) {
-        //     this.videos = await resLocal.json()
-        //   }
+        // if (marketRes.data) {
+        //   this.marketIndices = marketRes.data as MarketIndex[];
         // }
-        // 兜底本地 JSON
-        const baseUrl = import.meta.env.BASE_URL || '/'
-        const resLocal = await fetch(`${baseUrl}data/videos.json?t=${Date.now()}`)
-        if (resLocal.ok) {
-          this.videos = await resLocal.json()
-        }
-
-        // 2. 加载指数数据 (从 market_indices 集合)
-        const marketRes = await db.collection("market_indices")
-          .orderBy("date", "asc")
-          .limit(1000)
-          .get();
-        
-        if (marketRes.data) {
-          this.marketIndices = marketRes.data as MarketIndex[];
-        }
 
         // 3. 加载行业实时数据
         await this.fetchSectorData();
 
         // 4. 尝试更新今日指数 (如果还没有今日数据)
         const today = getLocalDateString();
-        const now = new Date();
-        const isAfterMarketClose = now.getHours() >= 15; // 只有下午三点收盘后
-
         if (!this.marketIndices.find(m => m.date === today)) {
           const currentMarket = await fetchSSEIndexCurrent();
           if (currentMarket) {
             this.marketIndices.push(currentMarket);
-            // 只有下午三点收盘后才自动存入数据库供所有人查看
-            if (isAfterMarketClose) {
-              await db.collection("market_indices").add(currentMarket).catch(() => {});
-            }
           }
         }
 
@@ -157,12 +128,13 @@ export const useAnalysisStore = defineStore('analysis', {
       }
     },
 
-    async addAnalysisItem(item: AnalysisItem) {
+    async addAnalysisItem(_item: AnalysisItem) {
       this.isLoading = true;
       try {
-        await login();
-        const res = await db.collection("analysis_items").add(item);
-        if (!res.id) throw new Error('新增失败');
+        // 已迁移到 D1，不再使用 CloudBase
+        // await login();
+        // const res = await db.collection("analysis_items").add(item);
+        // if (!res.id) throw new Error('新增失败');
         await this.fetchVideos();
         return true;
       } catch (err: any) {
