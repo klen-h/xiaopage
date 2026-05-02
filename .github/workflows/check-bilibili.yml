@@ -43,5 +43,5 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add public/data/videos.json
-          git diff --staged --quiet || git commit -m "📊 更新视频分析数据 $(date +'%Y-%m-%d %H:%M')"
+          git diff --staged --quiet || git commit -m "📊 更新视频分析数据 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')"
           git push
