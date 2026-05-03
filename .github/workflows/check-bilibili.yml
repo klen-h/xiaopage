@@ -2,7 +2,9 @@ name: 检查B站新视频
 
 on:
   schedule:
-    - cron: '0,30 1-16 * * *'
+  - cron: '0 1-15 * * *'
+  - cron: '30 1-15 * * *'
+  - cron: '0 16 * * *'
   workflow_dispatch:
 
 jobs:
@@ -28,7 +30,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装 Node 依赖
-        run: npm ci
+        run: npm install
 
       - name: 安装 yt-dlp
         run: |
