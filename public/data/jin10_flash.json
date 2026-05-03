@@ -2,6 +2,21 @@
   "date": "2026/5/4",
   "items": [
     {
+      "id": "20260504053512205800",
+      "time": "2026-05-04 05:35:12",
+      "hot": "沸",
+      "content": "【金十数据整理：中东局势跟踪（5月4日）】<br/><b>①伊朗</b><br/><span class=\"section-news\">1. 伊朗外交部发言人：特朗普吹嘘行事如“海盗”是对犯罪的直接承认。</span><br/><span class=\"section-news\">2. 伊朗一超大型油轮“躲过”美海军追踪，正驶向印尼廖内群岛。</span><br/><span class=\"section-news\">3. 伊朗官员：伊正在研究超过8条贸易替代通道或路线。</span><br/><span class=\"section-news\">4. 伊朗称霍尔木兹海峡一切交通都必须获得伊朗许可。</span><br/><span class=\"section-news\">5. 伊朗最高领袖外事顾问：特朗普近期言行难掩“白宫幻想破灭”。</span><br/><span class=\"section-news\">6. 伊朗国家石油公司经理：尽管面临威胁，我们在战争期间钻探了数千口油井和储油层，以维持生产和出口。</span><br/><span class=\"section-news\">7. 伊朗正审议美方对14点提议所作回应，现阶段没有进行核谈判。</span><br/><b>②美国</b><br/><span class=\"section-news\">1. 美媒称伊朗不要求直接谈判前解除霍尔木兹海峡封锁。</span><br/><span class=\"section-news\">2. 美国代理司法部长：特朗普关于在伊朗的军事行动不是战争的言论是正确的，认为此举违法的说法无效。</span><br/><span class=\"section-news\">3. 特朗普在采访中表示，伊朗的新提议是不可接受的。</span><br/><span class=\"section-news\">4. 威特科夫称，华盛顿目前正与伊朗进行对话。伊朗方面尚未回应。</span><br/><span class=\"section-news\">5. 特朗普：将于中东时间周一起启动引导被困霍尔木兹海峡船只驶离的行动，留意到美方代表正与伊朗进行积极磋商。</span><br/><span class=\"section-news\">6. 美媒：消息人士称，美国方面周日针对伊朗官员的最新提议，又提交了一份旨在结束战争的协议修订草案。</span><br/><b>③以色列</b><br/><span class=\"section-news\">1. 以色列批准从美国采购新型战机计划。</span><br/><span class=\"section-news\">2. 以军称当天早前以北部遭火箭弹袭击为误判。</span><br/><span class=\"section-news\">3. 以总理：为本土化弹药生产，未来十年以国防预算将追加3500亿新谢克尔。</span><br/><span class=\"section-news\">4. 以总理要求政府所有部长不得就伊朗问题接受媒体采访。</span><br/><b>④霍尔木兹海峡</b><br/><span class=\"section-news\">1. 美国财长贝森特：伊朗在试图征收船只通行费方面收效甚微；对更多船只通过霍尔木兹海峡并不惊讶。</span><br/><b>⑤停火谈判</b><br/><span class=\"section-news\">1. 媒体披露伊朗最新谈判方案细节，方案包含三个阶段。其中第一阶段包含“在30天时间内将停火转化为全面停战”。</span><br/><b>⑥其他情况</b><br/><span class=\"section-news\">1. 以军空袭黎南部致8死11伤。</span><br/><span class=\"section-news\">2. 默茨称美削减驻德军队与其涉伊朗战事言论无关。</span>",
+      "source": "",
+      "source_link": "",
+      "important": 1,
+      "channel": [
+        1,
+        3,
+        2
+      ],
+      "collectedAt": "2026-05-03T22:57:06.828Z"
+    },
+    {
       "id": "20260504014300450800",
       "time": "2026-05-04 01:43:00",
       "hot": "沸",
@@ -133,5 +148,5 @@
       "collectedAt": "2026-05-03T13:27:36.045Z"
     }
   ],
-  "lastUpdated": "2026-05-03T22:01:17.533Z"
+  "lastUpdated": "2026-05-03T22:57:06.830Z"
 }
