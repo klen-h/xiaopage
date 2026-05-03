@@ -37,7 +37,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add temp/jin10_state.json public/data/
+          git add public/data/    # 去掉 temp/
           if ! git diff --staged --quiet; then
             git commit -m "⚡ $(TZ='Asia/Shanghai' date +'%m-%d %H:%M') 快讯更新"
             git push

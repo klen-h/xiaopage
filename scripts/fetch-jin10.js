@@ -17,7 +17,7 @@ const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
 
 const TEMP_DIR = path.resolve('temp');
 const DATA_DIR = path.resolve('public/data');
-const STATE_PATH = path.join(TEMP_DIR, 'jin10_state.json');
+const STATE_PATH = path.join(DATA_DIR, 'jin10_state.json');
 const RAW_PATH = path.join(DATA_DIR, 'jin10_flash.json');
 const ANALYSIS_PATH = path.join(DATA_DIR, 'jin10_analysis.json');
 
