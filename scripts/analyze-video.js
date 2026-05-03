@@ -27,6 +27,10 @@ const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID，可改成别的UP主
 const DATA_PATH = path.resolve('public/data/videos.json');
 
+// faster-whisper 配置
+const WHISPER_MODEL = process.env.WHISPER_MODEL || 'base';
+const WHISPER_MODEL_CACHE = path.resolve('temp', 'models');
+
 // Cookie配置：GitHub Actions无浏览器，需通过BILI_COOKIE环境变量传入
 const BILI_COOKIE = process.env.BILI_COOKIE || ''; // 直接Cookie字符串
 const BROWSER = process.env.BILI_BROWSER || 'edge';
@@ -186,9 +190,14 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
       }
     }
 
-    // 2. 获取B站AI字幕
+    // 2. 获取字幕（优先B站AI字幕，失败则使用阿里云语音识别）
     console.log('正在获取字幕...');
-    const transcript = await downloadBilibiliSubtitle(videoUrl);
+    let transcript = await downloadBilibiliSubtitle(videoUrl);
+    
+    if (!transcript) {
+      console.log('B站AI字幕不可用，尝试阿里云语音识别...');
+      transcript = await downloadAudioAndTranscribe(videoUrl);
+    }
 
     if (!transcript) {
       console.error('字幕获取失败，跳过此视频');
@@ -464,6 +473,73 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   } catch (error) {
     console.error('\n❌ AI分析失败:', error);
     if (error.code) console.error('错误码:', error.code);
+  }
+}
+
+// ==================== faster-whisper 语音识别（Node 调 Python）====================
+
+/**
+ * 下载音频并调用本地 faster-whisper 识别
+ */
+async function downloadAudioAndTranscribe(videoUrl) {
+  const tempDir = path.resolve('temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  
+  // 用 m4a 格式，不需要 ffmpeg 转码
+  const basePath = path.join(tempDir, `audio_${Date.now()}`);
+  
+  try {
+    console.log('正在下载音频...');
+    
+    // 下载最佳音频流（B站通常是 m4a/aac）
+    const cmd = `yt-dlp ${YT_DLP_COOKIE_ARGS} -f "ba" --no-playlist -o "${basePath}.%(ext)s" "${videoUrl}"`;
+    execSync(cmd, { encoding: 'utf-8', timeout: 120000, stdio: 'pipe' });
+    
+    // 找到实际下载的文件
+    const files = fs.readdirSync(tempDir);
+    const audioFile = files.find(f => f.startsWith(path.basename(basePath)));
+    if (!audioFile) throw new Error('音频下载失败');
+    
+    const audioPath = path.join(tempDir, audioFile);
+    console.log(`音频已下载: ${audioPath}`);
+    
+    // 调用 Python 脚本识别
+    console.log('正在使用 faster-whisper 识别...');
+    const scriptPath = path.resolve('scripts', 'transcribe.py');
+    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+    const output = execSync(
+      `${pythonCmd} "${scriptPath}" "${audioPath}" "base"`,
+      { 
+        encoding: 'utf-8', 
+        timeout: 300000,
+        stdio: 'pipe',
+        env: { ...process.env, PYTHONUNBUFFERED: '1' }
+      }
+    );
+    
+    const result = JSON.parse(output.trim());
+    
+    // 清理音频文件
+    try { fs.unlinkSync(audioPath); } catch {}
+    
+    if (result.text && result.text.length > 20) {
+      console.log(`✅ faster-whisper 识别成功（${result.text.length} 字）`);
+      return result.text;
+    }
+    
+    console.log('⚠️ 识别结果过短');
+    return null;
+    
+  } catch (error) {
+    console.error('❌ faster-whisper 识别失败:', error.message?.slice(0, 200));
+    // 清理
+    try {
+      const files = fs.readdirSync(tempDir);
+      files.filter(f => f.startsWith(path.basename(basePath))).forEach(f => {
+        fs.unlinkSync(path.join(tempDir, f));
+      });
+    } catch {}
+    return null;
   }
 }
 

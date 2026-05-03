@@ -2,15 +2,15 @@ name: 检查B站新视频
 
 on:
   schedule:
-    # 北京时间9:00-24:00每半小时执行（UTC时间1:00-16:00）
     - cron: '0,30 1-16 * * *'
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch:
 
 jobs:
   check-new-videos:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      contents: write # 允许提交更改
+      contents: write
 
     steps:
       - name: 检出代码
@@ -20,14 +20,39 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
 
-      - name: 安装依赖
-        run: npm install
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装 Node 依赖
+        run: npm ci
 
       - name: 安装 yt-dlp
         run: |
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+
+      - name: 安装 ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: 安装 faster-whisper
+        run: python -m pip install faster-whisper
+
+      # 关键：缓存路径必须和 Python 脚本里的一致
+      - name: 缓存 Whisper 模型
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/huggingface
+            ~/.cache/ctranslate2
+          key: whisper-model-base-${{ runner.os }}
+          restore-keys: |
+            whisper-model-base-
 
       - name: 检查新视频并分析
         env:
@@ -43,5 +68,9 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add public/data/videos.json
-          git diff --staged --quiet || git commit -m "📊 更新视频分析数据 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')"
-          git push
+          if ! git diff --staged --quiet; then
+            git commit -m "📊 更新视频分析数据 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')"
+            git push
+          else
+            echo "没有新数据，跳过提交"
+          fi
