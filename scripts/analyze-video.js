@@ -81,7 +81,7 @@ async function checkAndProcessNewVideos() {
   let output;
   try {
     output = execSync(
-      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 3 "${spaceUrl}"`,
+      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 10 "${spaceUrl}"`,
       { encoding: 'utf-8', timeout: 60000 }
     ).trim();
   } catch (error) {
