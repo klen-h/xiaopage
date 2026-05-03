@@ -136,8 +136,8 @@ async function checkAndProcessNewVideos() {
     } catch {
       // 标题或日期获取失败，保持null
     }
-    // 过滤时长超过10分钟（600秒）的视频
-    if (duration && duration > 600) {
+    // 过滤时长超过15分钟（900秒）的视频
+    if (duration && duration > 900) {
       console.log(`跳过超长视频: ${bvid.trim()} - ${title || '无标题'} (${Math.floor(duration / 60)}分${duration % 60}秒)`);
       continue;
     }
