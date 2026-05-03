@@ -1,0 +1,44 @@
+name: 金十快讯实时监控
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'    # 每5分钟
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 运行监控
+        env:
+          JIN10_COOKIE: ${{ secrets.JIN10_COOKIE }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        run: node scripts/fetch-jin10.js
+
+      - name: 提交状态
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add temp/jin10_state.json public/data/
+          if ! git diff --staged --quiet; then
+            git commit -m "⚡ $(TZ='Asia/Shanghai' date +'%m-%d %H:%M') 快讯更新"
+            git push
+          fi
