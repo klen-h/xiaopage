@@ -85,7 +85,7 @@ async function checkAndProcessNewVideos() {
   let output;
   try {
     output = execSync(
-      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 10 "${spaceUrl}"`,
+      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 30 "${spaceUrl}"`,
       { encoding: 'utf-8', timeout: 60000 }
     ).trim();
   } catch (error) {
@@ -136,8 +136,8 @@ async function checkAndProcessNewVideos() {
     } catch {
       // 标题或日期获取失败，保持null
     }
-    // 过滤时长超过10分钟（600秒）的视频
-    if (duration && duration > 600) {
+    // 过滤时长超过15分钟（900秒）的视频
+    if (duration && duration > 900) {
       console.log(`跳过超长视频: ${bvid.trim()} - ${title || '无标题'} (${Math.floor(duration / 60)}分${duration % 60}秒)`);
       continue;
     }
