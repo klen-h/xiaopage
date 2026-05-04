@@ -1,12 +1,12 @@
 {
-  "lastId": "20260504112036351800",
+  "lastId": "20260504145140074800",
   "pushedClusters": [
     {
       "cluster": "伊朗局势",
       "firstId": "20260503184038906800",
       "firstTime": "2026-05-03T19:49:31.725Z",
-      "lastUpdateId": "20260504112036351800",
-      "lastUpdateTime": "2026-05-04T03:59:35.851Z",
+      "lastUpdateId": "20260504145140074800",
+      "lastUpdateTime": "2026-05-04T07:44:39.028Z",
       "pushCount": 1,
       "hotMax": "沸"
     },
