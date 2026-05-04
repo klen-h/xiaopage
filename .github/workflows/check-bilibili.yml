@@ -63,6 +63,7 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
           BILI_UID: ${{ secrets.BILI_UID }}
+          WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
         run: node scripts/analyze-video.js --check-new
 
       - name: 提交更新

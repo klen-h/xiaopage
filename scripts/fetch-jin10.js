@@ -14,12 +14,14 @@ const WECHAT_WEBHOOK = process.env.WECHAT_WEBHOOK || '';
 const LLM_API_KEY = process.env.LLM_API_KEY;
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://api.siliconflow.cn/v1';
 const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
-const MY_HOLDINGS = process.env.MY_HOLDINGS ? process.env.MY_HOLDINGS.split(',') : ['红利ETF', '银行ETF', '证券ETF', '黄金ETF'];
 
 const DATA_DIR = path.resolve('public/data');
 const STATE_PATH = path.join(DATA_DIR, 'jin10_state.json');
 const RAW_PATH = path.join(DATA_DIR, 'jin10_flash.json');
 const ANALYSIS_PATH = path.join(DATA_DIR, 'jin10_analysis.json');
+
+import { HOLDINGSTEXT } from './const/index.js';
+import { getMarketData } from './data-layer.js';
 
 // ==================== 过滤规则 ====================
 const EXCLUDE_PATTERNS = [
@@ -117,7 +119,7 @@ const EVENT_CLUSTERS = [
 
 // ==================== 主入口 ====================
 async function main() {
-  console.log(`\n[${formatTime()}] 🚀 金十快讯监控启动 [原油核心模式]`);
+  console.log(`\n[${formatTime()}] 🚀 金十快讯监控启动 [原油核心+盘面验证模式]`);
 
   const items = await fetchJin10();
   if (items.length === 0) {
@@ -142,10 +144,20 @@ async function main() {
     console.log(`   ${c._clusterHot === '爆' ? '🔴' : '🔵'} ${urgentTag} ${c._cluster} (${c._clusterSize}条)`);
   });
 
-  const oilPrice = await getOilPrice();
+  let marketData = null;
+  let oilPrice = null;
+  try {
+    marketData = await getMarketData();
+    console.log(`📊 数据层状态: A股${marketData.isAOpen ? '开市' : '休市'} | 获取到${marketData.holdings.length} 个ETF行情`);
+    oilPrice = marketData.oil;
+  } catch (e) {
+    console.log('⚠️ data-layer获取失败:', e.message);
+  }
+
   if (oilPrice) {
     console.log(`📊 布伦特原油: $${oilPrice.price} (${oilPrice.change > 0 ? '+' : ''}${oilPrice.change}%)`);
   }
+  const holdingsData = marketData?.holdings || [];
 
   const state = loadState();
   const toAnalyze = [];
@@ -170,9 +182,9 @@ async function main() {
 
   if (toAnalyze.length > 0) {
     console.log(`🧠 送审 LLM: ${toAnalyze.length} 个事件簇`);
-    const analysis = await analyzeWithLLM(toAnalyze, oilPrice);
-    await pushWechat(analysis, toAnalyze, oilPrice);
-
+    const analysis = await analyzeWithLLM(toAnalyze, oilPrice, holdingsData);
+    await pushWechat(analysis, toAnalyze, oilPrice, holdingsData);
+    
     for (const cluster of toAnalyze) {
       const existingIdx = state.pushedClusters?.findIndex(p => p.cluster === cluster._cluster);
       if (existingIdx >= 0) {
@@ -268,27 +280,6 @@ async function fetchJin10() {
   } catch (error) {
     console.error('❌ 采集失败:', error.response?.status, error.message);
     return [];
-  }
-}
-
-// ==================== 实时油价 ====================
-async function getOilPrice() {
-  try {
-    const { data } = await axios.get(
-      'https://push2.eastmoney.com/api/qt/stock/get?secid=103.GC00Y&fields=f43,f170,f60',
-      { timeout: 10000 }
-    );
-    
-    if (!data.data) return null;
-    
-    return {
-      price: (data.data.f43 / 100).toFixed(2),
-      change: (data.data.f170 / 100).toFixed(2),
-      changePercent: data.data.f60 ? (data.data.f60 / 100).toFixed(2) : null,
-    };
-  } catch (error) {
-    console.log('⚠️ 油价获取失败:', error.message);
-    return null;
   }
 }
 
@@ -453,76 +444,76 @@ function isMajorUpdate(cluster, existing) {
 }
 
 // ==================== LLM 分析 ====================
-async function analyzeWithLLM(clusteredItems, oilPrice) {
+async function analyzeWithLLM(clusteredItems, oilPrice, holdingsData) {
+  const holdingsStatusText = formatHoldingsForLLM(holdingsData);
+  console.log('holdingsStatusText:', holdingsStatusText);
   const flashText = clusteredItems.map(i => {
     const sizeTag = i._clusterSize > 1 ? ` [本簇共${i._clusterSize}条]` : '';
     const oilTag = i._cluster === '原油能源' || i._cluster === '伊朗局势' || i._cluster === '中东战争' ? ' [原油核心]' : '';
     const urgentTag = hasUrgentTime(i.content) ? ' [时间敏感]' : '';
     return `[${i._clusterHot}]${sizeTag}${oilTag}${urgentTag} ${i._cluster}\n时间: ${i.time}\n来源: ${i.source || '金十'}\n${i.content.slice(0, 350)}...`;
   }).join('\n\n---\n\n');
-
-  const holdingsText = MY_HOLDINGS.join('、');
-
-  const prompt = `你是一位宏观交易信号过滤专家。当前市场以原油价格为绝对核心锚定，所有分析必须围绕原油传导链展开。
+  console.log('oilPrice:', oilPrice);
+  const prompt = `你是一位宏观交易信号过滤专家。当前市场以原油价格为绝对核心锚定，所有分析必须围绕原油传导链展开，并结合实盘表现进行交叉验证。
 
 【当前原油状态】
 布伦特原油: $${oilPrice?.price || '未知'} (${oilPrice?.change > 0 ? '+' : ''}${oilPrice?.change || 0}%)
 
 【用户持仓】
-${holdingsText}
+${HOLDINGSTEXT}
 
-【核心判断标准】
-1. 原油传导链（必须回答）：
-   - 该事件对原油供需的直接影响？
-   - 油价变动对A股的传导路径？
-   - 用户持仓中哪些会直接受益/受损？
+ 【⚠️ 当前ETF实盘状态（按涨跌幅排序）】
+ ${holdingsStatusText}
 
-2. 时间敏感度：
-   - 事件是否即将发生（几小时内、今天、明天）？
-   - 是否需要立即行动，还是可以等开盘？
-
-3. 持仓匹配度：
-   - 该事件与用户持仓的相关性？
-   - 如果没有原油敞口，是否需要建议调仓？
+ 【核心判断标准】
+ 1. 盘面交叉验证（最重要）：
+ - 新闻逻辑与盘面表现是否一致？
+ - 如果新闻是重大利好，但对应ETF没涨甚至跌了，说明什么？（可能是利好出尽、资金博弈、或逻辑有误）
+ - 如果新闻看似平淡，但某个ETF突然异动拉升，说明什么？（可能有未公开资金抢筹）
+ 2. 原油传导链：同前
+ 3. 时间敏感度：同前
+ 4. 精准标的匹配：同前（必须在用户持仓中的ETF中选）
 
 【输入事件簇】
 ${flashText}
 
-【输出要求】
-- 原油相关事件自动 +2 分
-- 时间敏感事件（几小时内发生）自动 +2 分
-- 与用户持仓高相关的事件自动 +1 分
-- 只输出 value_score >= 7 的事件，每天最多 3 个
+ 【输出要求】
+ - 原油相关事件自动 +2 分
+ - 时间敏感事件（几小时内发生）自动 +2 分
+ - 【新增】盘面已提前反应（新闻落地前已涨/跌超1%）的事件 -1 分（防追高/防杀跌）
+ - 【新增】盘面未反应但逻辑极强的突发消息 +1 分（埋伏机会）
+ - 只输出 value_score >= 7 的事件，每天最多 3 个
 
-【输出格式】（严格JSON）
-{
-  "market_mood": "string, 恐慌/谨慎/中性/乐观/狂热",
-  "noise_level": "integer, 0-100",
-  "oil_outlook": "string, 原油展望：看涨/看跌/震荡，50字内",
-  "top_events": [
-    {
-      "cluster_name": "string, 事件名称",
-      "value_score": "integer, 1-10",
-      "oil_impact": "string, 对原油的直接影响",
-      "transmission_chain": "string, 传导链：原油→?→?→A股",
-      "action": "string, 加仓/减仓/调仓/观望",
-      "target": "string, 具体ETF或板块",
-      "urgency": "string, 立即/开盘前/日内/不紧急",
-      "time_sensitive": "boolean, 是否时间敏感",
-      "holding_match": "string, 与用户持仓匹配度：高/中/低/无",
-      "why": "string, 核心价值逻辑",
-      "contrarian": "string, 逆向机会",
-      "risk": "string, 误读风险"
-    }
-  ],
-  "daily_strategy": {
-    "overall_position": "string",
-    "core_logic": "string, 50字内，必须包含原油判断",
-    "oil_trade": "string, 原油相关操作建议",
-    "key_risks": ["string"],
-    "watchlist": ["string"]
-  }
-}`;
+ 【输出格式】（严格JSON，新增盘面验证字段）
+ {
+   "market_mood": "string",
+   "noise_level": "integer",
+   "oil_outlook": "string",
+   "top_events": [
+     {
+       "cluster_name": "string",
+       "value_score": "integer",
+       "oil_impact": "string",
+       "transmission_chain": "string",
+       "action": "string, 加仓/减仓/调仓/观望/埋伏",
+       "target": "string, 必须是用户持仓中的ETF之一的全称",
+       "urgency": "string",
+       "time_sensitive": "boolean",
+       "holding_match": "string",
+       "why": "string, 核心价值逻辑",
+       "market_validation": "string, 盘面验证情况：如'盘面已提前反应，追高风险大'或'盘面尚未反应，存在预期差'",
+       "contrarian": "string",
+       "risk": "string"
+     }
+   ],
+   "daily_strategy": {
+     "overall_position": "string",
+     "core_logic": "string, 必须包含对当前盘面异动特征的评价",
+     "oil_trade": "string",
+     "key_risks": ["string"],
+     "watchlist": ["string"]
+   }
+ }`;
 
   try {
     const response = await axios.post(
@@ -563,8 +554,22 @@ ${flashText}
   }
 }
 
+// ==================== 盘面格式化 ====================
+function formatHoldingsForLLM(holdings) {
+  if (!holdings || holdings.length === 0) {
+    return '当前为非交易时段，无ETF实时盘面数据。请纯粹基于事件逻辑进行分析。';
+  }
+  // 按涨跌幅排序，让LLM一眼看到最强和最弱的
+  const sorted = [...holdings].sort((a, b) => b.change - a.change);
+  return sorted.map(h => {
+    const arrow = h.change > 0 ? '🔺' : (h.change < 0 ? '🔻' : '➖');
+    return `${arrow} ${h.name}: 现价${h.price} (${h.change > 0 ? '+' : ''}${h.changeStr}%)`;
+  }).join('\n');
+}
+
+
 // ==================== 企微推送 ====================
-async function pushWechat(analysis, rawItems, oilPrice) {
+async function pushWechat(analysis, rawItems, oilPrice, holdingsData) {
   if (!WECHAT_WEBHOOK) {
     console.log('⚠️ 未配置 WECHAT_WEBHOOK');
     return;
@@ -579,15 +584,16 @@ async function pushWechat(analysis, rawItems, oilPrice) {
   const now = formatTime();
   const oilEmoji = oilPrice?.change > 0 ? '📈' : (oilPrice?.change < 0 ? '📉' : '➖');
 
-  let markdown = `## ${oilEmoji} 金十快讯 [原油核心] <font color="warning">${analysis.market_mood}</font>
-> 时间：${now} | 布伦特原油: **$${oilPrice?.price || '?'}** (${oilPrice?.change > 0 ? '+' : ''}${oilPrice?.change || 0}%)
-> 仓位建议：**${analysis.daily_strategy?.overall_position || '观望'}**
-> 原油展望：${analysis.oil_outlook || '无'}
-> 核心逻辑：${analysis.daily_strategy?.core_logic || '无'}
+  const topGainer = holdingsData.sort((a,b) => b.change - a.change)[0];
+  const topLoser = holdingsData.sort((a,b) => a.change - b.change)[0];
 
----
-
-`;
+  let markdown = `## ${oilEmoji} 金十快讯 [原油核心+盘面验证] <font color="warning">${analysis.market_mood}</font> 
+  > 时间：${now} | 布伦特: **$${oilPrice?.price || '?'}** (${oilPrice?.change > 0 ? '+' : ''}${oilPrice?.change || 0}%)
+  > 仓位建议：**${analysis.daily_strategy?.overall_position || '观望'}**
+  > 原油展望：${analysis.oil_outlook || '无'}
+  > 盘面特征：${topGainer ? `领涨<font color="info">${topGainer.name}(+${topGainer.changeStr}%)</font> | 领跌<font color="red">${topLoser.name}(${topLoser.changeStr}%)</font>` : '休市中'}
+  --- 
+  `;
 
   for (const event of events.slice(0, 3)) {
     const raw = rawItems.find(i => i._cluster === event.cluster_name);
