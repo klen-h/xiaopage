@@ -1,0 +1,12 @@
+[
+  {
+    "fetchTime": "2026-05-04T17:58:56.402Z",
+    "data": {
+      "spotGold": {
+        "ticker": "XAUUSD=X",
+        "timestamp": "2026-05-04T17:58:56.402Z",
+        "error": "response.headers.getSetCookie is not a function"
+      }
+    }
+  }
+]

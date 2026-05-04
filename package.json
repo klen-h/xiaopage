@@ -23,7 +23,8 @@
     "stock-sdk": "^1.8.0",
     "tailwind-merge": "^2.2.2",
     "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "yahoo-finance2": "^3.14.0"
   },
   "devDependencies": {
     "@cloudbase/cli": "^3.0.1",
