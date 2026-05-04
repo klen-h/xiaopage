@@ -2,6 +2,21 @@
   "date": "2026/5/5",
   "items": [
     {
+      "id": "20260505054718758800",
+      "time": "2026-05-05 05:47:18",
+      "hot": "沸",
+      "content": "【金十数据整理：中东局势跟踪（5月5日）】<br/><b>①伊朗</b><br/><span class=\"section-news\">1. 伊朗媒体：伊方没有计划袭击阿联酋。</span><br/><span class=\"section-news\">2. 伊朗军事官员：阿联酋石油设施起火是美国军事冒险所致。</span><br/><span class=\"section-news\">3. 伊朗高级官员否认美军击沉多艘小型船只的言论。</span><br/><span class=\"section-news\">4. 伊朗警告阿联酋勿当以色列棋子。</span><br/><span class=\"section-news\">5. 伊媒：伊朗陆军总司令对美航母发出的警告来自假账号。</span><br/><b>②美国</b><br/><span class=\"section-news\">1. 贝森特：如果伊朗人想升级局势，美国也愿意升级。</span><br/><span class=\"section-news\">2. 特朗普称美方击沉7艘伊朗小型船只，美军中央司令部司令库珀称击沉6艘。</span><br/><span class=\"section-news\">3. 美中央司令部司令：更多船只准备通过霍尔木兹海峡。</span><br/><span class=\"section-news\">4. 特朗普：若伊朗攻击美国军舰，将被“从地球上抹去”。</span><br/><span class=\"section-news\">5. 美情报部门：近期战事并未对伊核计划造成显著打击。</span><br/><span class=\"section-news\">6. 美媒：特朗普未明确表示伊朗已违反停火协议。</span><br/><b>③以色列</b><br/><span class=\"section-news\">1. 以官员称以方已做好重返战斗准备，正待美“开绿灯”。</span><br/><span class=\"section-news\">2. 以媒称以方4日提高警戒级别。</span><br/><b>④霍尔木兹海峡</b><br/><span class=\"section-news\">1. 伊朗否认任何商船或油轮穿越海峡。</span><br/><span class=\"section-news\">2. 美国中央司令部：两艘悬挂美国国旗的商船已通过霍尔木兹海峡。</span><br/><span class=\"section-news\">3. 伊朗革命卫队发言人表示，在霍尔木兹海峡违反所颁布规定的船只“将被强行拦截”。</span><br/><span class=\"section-news\">4. 英海事机构称周一霍尔木兹海峡附近三艘船只遇袭。</span><br/><span class=\"section-news\">5. 特朗普呼吁韩国加入霍尔木兹海峡行动。</span><br/><span class=\"section-news\">6. 马士基：旗下悬挂美国国旗的船舶在美军护航下通过霍尔木兹海峡。</span><br/><span class=\"section-news\">7. 法国总统马克龙：法国不会参与美国新的“霍尔木兹计划”。</span><br/><span class=\"section-news\">8. 美国中央司令部司令：伊朗使用导弹打击商船及美军舰。当前重点是让船只驶离霍尔木兹海峡，随后将逐步考虑让船只进入霍尔木兹海峡。</span><br/><span class=\"section-news\">9. 据伊朗Mizan新闻社：伊朗一名高级安全消息人士表示，伊朗的信息很明确，如果美国人试图在霍尔木兹海峡推进，将成为打击目标。</span><br/><b>⑥其他情况</b><br/><span class=\"section-news\">1. 阿联酋国防部称4日拦截伊朗十余枚导弹及多架无人机。</span><br/><span class=\"section-news\">2. 美伊临时停火以来阿联酋首次遭袭，富查伊拉石油工业区3人受伤。</span><br/><span class=\"section-news\">3. 黎巴嫩总统：与以总理会晤时机尚不成熟。</span><br/><span class=\"section-news\">4. 以称打击黎真主党基础设施，真主党称袭击以军集结地。</span><br/><span class=\"section-news\">5. 黑客组织“哈达拉（Handala）”宣称，他们对阿联酋的富查伊拉港发动了网络攻击。</span><br/><span class=\"section-news\">6. 据以色列媒体Kann：阿联酋国防委员会主席向其以色列对口官员表示，将对伊朗进行反击。</span><br/><span class=\"section-news\">7. 美国国务院领事事务局：我们对阿联酋的旅行警告建议仍维持在三级。</span>",
+      "source": "",
+      "source_link": "",
+      "important": 1,
+      "channel": [
+        1,
+        3,
+        2
+      ],
+      "collectedAt": "2026-05-04T22:30:31.855Z"
+    },
+    {
       "id": "20260505000745843800",
       "time": "2026-05-05 00:07:45",
       "hot": "沸",
@@ -807,5 +822,5 @@
       "collectedAt": "2026-05-03T13:27:36.045Z"
     }
   ],
-  "lastUpdated": "2026-05-04T17:55:25.149Z"
+  "lastUpdated": "2026-05-04T22:30:32.029Z"
 }
