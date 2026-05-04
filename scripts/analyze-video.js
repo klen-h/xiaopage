@@ -27,13 +27,12 @@ const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID，可改成别的UP主
 const DATA_PATH = path.resolve('public/data/videos.json');
 
-// faster-whisper 配置
-const WHISPER_MODEL = process.env.WHISPER_MODEL || 'base';
-const WHISPER_MODEL_CACHE = path.resolve('temp', 'models');
-
 // Cookie配置：GitHub Actions无浏览器，需通过BILI_COOKIE环境变量传入
 const BILI_COOKIE = process.env.BILI_COOKIE || ''; // 直接Cookie字符串
 const BROWSER = process.env.BILI_BROWSER || 'edge';
+
+// 企微配置
+const WECHAT_WEBHOOK = process.env.WECHAT_WEBHOOK || '';
 
 // yt-dlp Cookie参数：有BILI_COOKIE时写入文件，否则从浏览器提取
 let YT_DLP_COOKIE_ARGS;
@@ -215,7 +214,9 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
     if(analysisJson) {
       data.unshift(analysisJson);
       fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
-      console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名'); 
+      console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
+      // 企微通知
+      pushWechat(analysisJson.title || videoTitle || '未命名', bvid);
     } else {
       console.error('处理失败');
     }
@@ -540,6 +541,26 @@ async function downloadAudioAndTranscribe(videoUrl) {
       });
     } catch {}
     return null;
+  }
+}
+
+
+// ==================== 企微推送 ====================
+async function pushWechat(title, bvid) {
+  if (!WECHAT_WEBHOOK) {
+    console.log('⚠️ 未配置 WECHAT_WEBHOOK');
+    return;
+  }
+  const url = `https://xiaopage.1213962718.workers.dev/#/analysis/${bvid}`;
+  try {
+    await axios.post(
+      WECHAT_WEBHOOK,
+      { msgtype: 'markdown', markdown: { content: `[${title}](${url})` } },
+      { timeout: 15000 }
+    );
+    console.log('📲 企微推送成功');
+  } catch (error) {
+    console.error('❌ 企微推送失败:', error.response?.data || error.message);
   }
 }
 
