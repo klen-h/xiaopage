@@ -1,5 +1,5 @@
 {
-  "lastId": "20260504191512828800",
+  "lastId": "20260504194152681800",
   "pushedClusters": [
     {
       "cluster": "港股/中概股",
@@ -29,8 +29,8 @@
       "cluster": "原油能源",
       "firstId": "20260504112036351800",
       "firstTime": "2026-05-04T08:39:45.151Z",
-      "lastUpdateId": "20260504181456989800",
-      "lastUpdateTime": "2026-05-04T11:27:28.661Z",
+      "lastUpdateId": "20260504194152681800",
+      "lastUpdateTime": "2026-05-04T12:00:49.250Z",
       "pushCount": 1,
       "hotMax": "爆",
       "hadUrgent": false,
