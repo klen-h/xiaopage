@@ -1,5 +1,5 @@
 {
-  "lastId": "20260504145140074800",
+  "lastId": "20260504163540570800",
   "pushedClusters": [
     {
       "cluster": "港股/中概股",
@@ -33,6 +33,30 @@
       "lastUpdateTime": "2026-05-04T08:39:45.151Z",
       "pushCount": 1,
       "hotMax": "爆",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "伊朗局势",
+      "firstId": "20260504161204148800",
+      "firstTime": "2026-05-04T10:02:20.785Z",
+      "lastUpdateId": "20260504161204148800",
+      "lastUpdateTime": "2026-05-04T10:02:20.785Z",
+      "pushCount": 1,
+      "hotMax": "沸",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "黄金贵金属",
+      "firstId": "20260504163540570800",
+      "firstTime": "2026-05-04T10:02:20.785Z",
+      "lastUpdateId": "20260504163540570800",
+      "lastUpdateTime": "2026-05-04T10:02:20.785Z",
+      "pushCount": 1,
+      "hotMax": "沸",
       "hadUrgent": false,
       "hasMilitary": false,
       "hasDeployment": false
