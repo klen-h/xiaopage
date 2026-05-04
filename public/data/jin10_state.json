@@ -1,0 +1,41 @@
+{
+  "lastId": "20260504145140074800",
+  "pushedClusters": [
+    {
+      "cluster": "港股/中概股",
+      "firstId": "20260504094002651800",
+      "firstTime": "2026-05-04T08:39:45.150Z",
+      "lastUpdateId": "20260504094002651800",
+      "lastUpdateTime": "2026-05-04T08:39:45.150Z",
+      "pushCount": 1,
+      "hotMax": "沸",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "其他",
+      "firstId": "20260504103832873800",
+      "firstTime": "2026-05-04T08:39:45.150Z",
+      "lastUpdateId": "20260504103832873800",
+      "lastUpdateTime": "2026-05-04T08:39:45.150Z",
+      "pushCount": 1,
+      "hotMax": "爆",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "原油能源",
+      "firstId": "20260504112036351800",
+      "firstTime": "2026-05-04T08:39:45.151Z",
+      "lastUpdateId": "20260504112036351800",
+      "lastUpdateTime": "2026-05-04T08:39:45.151Z",
+      "pushCount": 1,
+      "hotMax": "爆",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    }
+  ]
+}

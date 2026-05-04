@@ -1,6 +1,6 @@
 /**
- * 金十快讯实时监控 - 完整版
- * 采集 → 过滤 → 聚合 → LLM分析 → 企微推送 → 状态保存
+ * 金十快讯实时监控 - 原油核心版（修复版）
+ * 修复：时间敏感词识别、板块行情保留、重大更新重新触发
  */
 
 import axios from 'axios';
@@ -14,14 +14,14 @@ const WECHAT_WEBHOOK = process.env.WECHAT_WEBHOOK || '';
 const LLM_API_KEY = process.env.LLM_API_KEY;
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://api.siliconflow.cn/v1';
 const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
+const MY_HOLDINGS = process.env.MY_HOLDINGS ? process.env.MY_HOLDINGS.split(',') : ['红利ETF', '银行ETF', '证券ETF', '黄金ETF'];
 
-const TEMP_DIR = path.resolve('temp');
 const DATA_DIR = path.resolve('public/data');
 const STATE_PATH = path.join(DATA_DIR, 'jin10_state.json');
 const RAW_PATH = path.join(DATA_DIR, 'jin10_flash.json');
 const ANALYSIS_PATH = path.join(DATA_DIR, 'jin10_analysis.json');
 
-// 硬规则：排除这些模式
+// ==================== 过滤规则 ====================
 const EXCLUDE_PATTERNS = [
   /^【金十数据整理[：:]/,
   /^【今日重点关注的财经数据/,
@@ -32,58 +32,99 @@ const EXCLUDE_PATTERNS = [
   /Good afternoon/i,
   /"好好先生"/i,
   /特朗普.*"太迟先生"/i,
+  /特朗普.*其他地方没人要他/i,
 ];
 
-// 低价值关键词（标题党、情绪宣泄）
 const LOW_VALUE_KEYWORDS = [
   '俏皮话', '最后一次新闻发布会', '不会成为"影子主席"',
   '部署时间创纪录', '厕所也反复出现问题',
-  '特朗普：其他地方没人要他',
 ];
 
-// 个股财报关键词（走另一条通道，不走宏观）
-const STOCK_REPORT_KEYWORDS = [
-  '一季度净利润', '第一季度净利润', 'Q1净利润',
-  '一季度营收', '第一季度营收',
+const URGENT_TIME_KEYWORDS = [
+  '几小时内', '即将', '马上', '立刻', '立即',
+  '倒计时', '最后期限', '最后通牒',
+  '周一早上', '周二', '明天', '今晚',
+  '行动开始', '行动将在', '启动.*行动',
+  '几小时', '数小时内', '接下来',
 ];
 
-// A股相关关键词（用于相关性判断）
 const A_STOCK_KEYWORDS = [
-  'A股', '上证', '深证', '创业板', '科创板', '沪指', '深成指', '沪深300',
-  '央行', '降准', '降息', 'MLF', 'LPR', '逆回购', '汇金', '社保基金',
-  '证监会', 'IPO', '再融资', '减持', '增持',
-  '中美', '关税', '贸易', '谈判', '制裁',
-  '伊朗', '霍尔木兹', '原油', '黄金', '美联储', '鲍威尔', '加息', '降息',
-  '房地产', '限购', '公积金', '地产',
-  '证券', '券商', '银行', '保险', '半导体', '芯片', 'AI', '新能源',
+  '原油', '油价', '石油', 'WTI', '布伦特', 'Brent', 'EIA',
+  '欧佩克', 'OPEC', '页岩油', '战略储备', '储油', '管道',
+  '霍尔木兹', '海峡', '油轮', '油运', '航运',
+  '沙特', '阿联酋', '科威特', '伊拉克', '委内瑞拉',
+  '三桶油', '中石油', '中石化', '中海油',
+  '化工', '塑料', 'PTA', '沥青', '化肥',
+  '通胀', 'CPI', 'PPI', '美联储', '加息', '降息', '鲍威尔',
+  '央行', '降准', 'MLF', 'LPR',
+  'A股', '上证', '深证', '创业板', '沪指', '沪深300',
+  '汇金', '社保基金', '国家队',
+  '伊朗', '核计划', '封锁', '美伊', '中东', '战争',
+  '中美', '关税', '贸易', '制裁',
+  '证券', '券商', '银行', '保险', '半导体', '芯片',
+  '房地产', '限购', '公积金',
 ];
 
-// 事件簇定义（用于聚合）
 const EVENT_CLUSTERS = [
-  { name: '美联储利率决议', keywords: ['美联储', 'FOMC', '利率决议', '维持利率', '降息', '加息', '鲍威尔'] },
-  { name: '美联储人事变动', keywords: ['沃什', '美联储主席提名', '参议院', '米兰', '哈玛克', '卡什卡利'] },
-  { name: '伊朗局势', keywords: ['伊朗', '霍尔木兹', '核计划', '封锁', '特朗普.*伊朗', '美伊', '伊美'] },
-  { name: '中东战争授权', keywords: ['战争授权', '战争权力法', '60天', '国会授权', '军事行动'] },
-  { name: '原油能源', keywords: ['原油', '油价', '石油', 'WTI', '布伦特', 'EIA', '欧佩克', 'OPEC'] },
-  { name: '黄金贵金属', keywords: ['黄金', '增持黄金', '世界黄金协会', '白银'] },
-  { name: '国内政策', keywords: ['证监会', '央行', '降准', '降息', 'LPR', 'MLF', '限购', '公积金', '深圳.*房地产'] },
-  { name: '中美贸易', keywords: ['中美', '关税', '贸易', '半导体', '华虹', '脱钩'] },
-  { name: '俄乌局势', keywords: ['普京', '俄乌', '乌克兰', '停火', '胜利日'] },
-  { name: '科技股财报', keywords: ['谷歌财报', '微软财报', '亚马逊财报', 'Meta财报', '苹果财报'] },
+  { 
+    name: '原油能源', 
+    keywords: [
+      '原油', '油价', '石油', 'WTI', '布伦特', 'Brent', 
+      'EIA', '欧佩克', 'OPEC', '页岩油', '战略储备',
+      '霍尔木兹', '海峡', '油轮', '储油', '管道', '出口',
+      '沙特', '阿联酋', '科威特', '伊拉克', '委内瑞拉',
+      '三桶油', '中石油', '中石化', '中海油',
+      '化工', '塑料', 'PTA', '沥青', '化肥', '油运'
+    ] 
+  },
+  { 
+    name: '伊朗局势', 
+    keywords: ['伊朗', '核计划', '封锁', '特朗普.*伊朗', '美伊', '伊美', '哈梅内伊'] 
+  },
+  { 
+    name: '中东战争', 
+    keywords: ['战争授权', '战争权力法', '60天', '国会授权', '军事行动', '以军', '真主党', '哈马斯'] 
+  },
+  { 
+    name: '美联储利率', 
+    keywords: ['美联储', 'FOMC', '利率决议', '维持利率', '降息', '加息', '鲍威尔', '沃什'] 
+  },
+  { 
+    name: '美联储人事', 
+    keywords: ['沃什', '美联储主席提名', '参议院', '米兰', '哈玛克', '卡什卡利'] 
+  },
+  { 
+    name: '黄金贵金属', 
+    keywords: ['黄金', '增持黄金', '世界黄金协会', '白银', '央行购金'] 
+  },
+  { 
+    name: '国内政策', 
+    keywords: ['证监会', '央行', '降准', '降息', 'LPR', 'MLF', '限购', '公积金', '房地产'] 
+  },
+  { 
+    name: '中美贸易', 
+    keywords: ['中美', '关税', '贸易', '半导体', '华虹', '脱钩'] 
+  },
+  { 
+    name: '俄乌局势', 
+    keywords: ['普京', '俄乌', '乌克兰', '停火', '胜利日'] 
+  },
+  { 
+    name: '港股/中概股', 
+    keywords: ['港股', '恒生', '科网股', '小米', '阿里巴巴', '百度', '中芯国际'] 
+  },
 ];
 
 // ==================== 主入口 ====================
 async function main() {
-  console.log(`\n[${formatTime()}] 🚀 金十快讯监控启动`);
+  console.log(`\n[${formatTime()}] 🚀 金十快讯监控启动 [原油核心模式]`);
 
-  // 1. 采集
   const items = await fetchJin10();
   if (items.length === 0) {
     console.log('❌ 未获取到数据');
     process.exit(0);
   }
 
-  // 2. 去重（基于 state.lastId）
   const newItems = getNewItems(items);
   if (newItems.length === 0) {
     console.log('⏭️ 无新增快讯');
@@ -91,50 +132,56 @@ async function main() {
   }
   console.log(`📥 新增 ${newItems.length} 条`);
 
-  // 3. 硬规则过滤
   const filtered = preFilter(newItems);
   console.log(`🔍 硬过滤后: ${filtered.length} 条`);
 
-  // 4. 同事件聚合
   const clustered = deduplicateByEvent(filtered);
   console.log(`📦 聚合为 ${clustered.length} 个事件簇`);
+  clustered.forEach(c => {
+    const urgentTag = hasUrgentTime(c.content) ? '⏰' : '';
+    console.log(`   ${c._clusterHot === '爆' ? '🔴' : '🔵'} ${urgentTag} ${c._cluster} (${c._clusterSize}条)`);
+  });
 
-  // 5. 判断哪些需要 LLM 分析
+  const oilPrice = await getOilPrice();
+  if (oilPrice) {
+    console.log(`📊 布伦特原油: $${oilPrice.price} (${oilPrice.change > 0 ? '+' : ''}${oilPrice.change}%)`);
+  }
+
   const state = loadState();
   const toAnalyze = [];
-  const toUpdate = []; // 已有事件但需更新状态
+  const toUpdate = [];
 
   for (const cluster of clustered) {
     const existing = state.pushedClusters?.find(p => p.cluster === cluster._cluster);
 
     if (!existing) {
-      // 全新事件
       toAnalyze.push(cluster);
+      console.log(`   🆕 新事件: ${cluster._cluster}`);
     } else if (cluster.hot === '爆' && existing.pushCount === 0) {
-      // 已有事件升级成"爆"
-      console.log(`🔥 ${cluster._cluster} 升级为"爆"，补推`);
+      console.log(`   🔥 ${cluster._cluster} 升级为"爆"，补推`);
+      toAnalyze.push(cluster);
+    } else if (isMajorUpdate(cluster, existing)) {
+      console.log(`   ⏰ ${cluster._cluster} 重大更新，重新推送`);
       toAnalyze.push(cluster);
     } else {
-      // 静默更新状态
       toUpdate.push({ cluster: cluster._cluster, lastId: cluster.id });
     }
   }
 
-  // 6. LLM 分析 + 推送
   if (toAnalyze.length > 0) {
     console.log(`🧠 送审 LLM: ${toAnalyze.length} 个事件簇`);
-    const analysis = await analyzeWithLLM(toAnalyze);
+    const analysis = await analyzeWithLLM(toAnalyze, oilPrice);
+    await pushWechat(analysis, toAnalyze, oilPrice);
 
-    // 推送到企微
-    await pushWechat(analysis, toAnalyze);
-
-    // 更新推送状态
     for (const cluster of toAnalyze) {
       const existingIdx = state.pushedClusters?.findIndex(p => p.cluster === cluster._cluster);
       if (existingIdx >= 0) {
         state.pushedClusters[existingIdx].pushCount++;
         state.pushedClusters[existingIdx].lastUpdateId = cluster.id;
         state.pushedClusters[existingIdx].lastUpdateTime = new Date().toISOString();
+        if (hasUrgentTime(cluster.content)) state.pushedClusters[existingIdx].hadUrgent = true;
+        if (cluster.content.includes('军事行动')) state.pushedClusters[existingIdx].hasMilitary = true;
+        if (cluster.content.includes('15000名') || cluster.content.includes('导弹驱逐舰')) state.pushedClusters[existingIdx].hasDeployment = true;
       } else {
         state.pushedClusters = state.pushedClusters || [];
         state.pushedClusters.push({
@@ -145,6 +192,9 @@ async function main() {
           lastUpdateTime: new Date().toISOString(),
           pushCount: 1,
           hotMax: cluster.hot === '爆' ? '爆' : '沸',
+          hadUrgent: hasUrgentTime(cluster.content),
+          hasMilitary: cluster.content.includes('军事行动'),
+          hasDeployment: cluster.content.includes('15000名') || cluster.content.includes('导弹驱逐舰'),
         });
       }
     }
@@ -152,7 +202,6 @@ async function main() {
     console.log('📭 无新事件需分析，静默');
   }
 
-  // 更新静默事件的状态
   for (const update of toUpdate) {
     const existing = state.pushedClusters?.find(p => p.cluster === update.cluster);
     if (existing) {
@@ -161,7 +210,6 @@ async function main() {
     }
   }
 
-  // 7. 保存所有数据
   saveState(state);
   saveRawData(items, newItems);
   if (toAnalyze.length > 0) {
@@ -207,7 +255,7 @@ async function fetchJin10() {
 
     return data.data.map(item => ({
       id: item.id,
-      time: item.time,  
+      time: item.time,
       hot: item.hot,
       content: item.data?.content || '',
       source: item.data?.source || '',
@@ -223,53 +271,72 @@ async function fetchJin10() {
   }
 }
 
+// ==================== 实时油价 ====================
+async function getOilPrice() {
+  try {
+    const { data } = await axios.get(
+      'https://push2.eastmoney.com/api/qt/stock/get?secid=103.GC00Y&fields=f43,f170,f60',
+      { timeout: 10000 }
+    );
+    
+    if (!data.data) return null;
+    
+    return {
+      price: (data.data.f43 / 100).toFixed(2),
+      change: (data.data.f170 / 100).toFixed(2),
+      changePercent: data.data.f60 ? (data.data.f60 / 100).toFixed(2) : null,
+    };
+  } catch (error) {
+    console.log('⚠️ 油价获取失败:', error.message);
+    return null;
+  }
+}
+
 // ==================== 去重 ====================
 function getNewItems(items) {
   const state = loadState();
   const lastId = state.lastId || '';
 
-  // 按ID降序（新在前）
   const sorted = [...items].sort((a, b) => (a.id > b.id ? -1 : 1));
 
   let newItems;
   if (!lastId) {
-    newItems = sorted.slice(0, 5); // 首次只取5条
+    newItems = sorted.slice(0, 5);
     console.log('🆕 首次运行，取最近5条');
   } else {
     newItems = sorted.filter(i => i.id > lastId);
   }
 
-  // 更新 lastId
   if (sorted.length > 0) {
     state.lastId = sorted[0].id;
     saveState(state);
   }
 
-  return newItems.reverse(); // 时间正序
+  return newItems.reverse();
 }
 
-// ==================== 硬规则过滤 ====================
+// ==================== 硬过滤（修复版） ====================
 function preFilter(items) {
   return items.filter(item => {
     const content = item.content || '';
 
-    // 1. 排除汇总类/无意义类
     if (EXCLUDE_PATTERNS.some(p => p.test(content))) {
-      console.log(`   🚫 排除(模式匹配): ${content.slice(0, 40)}...`);
+      console.log(`   🚫 排除(模式): ${content.slice(0, 40)}...`);
       return false;
     }
 
-    // 2. 排除低价值关键词
     if (LOW_VALUE_KEYWORDS.some(kw => content.includes(kw))) {
       console.log(`   🚫 排除(低价值): ${content.slice(0, 40)}...`);
       return false;
     }
 
-    // 3. 纯个股财报走另一条通道
-    const isStockReport = STOCK_REPORT_KEYWORDS.some(kw => content.includes(kw));
+    // 【修复】区分个股财报和板块行情
+    const isStockReport = /一季度净利润|第一季度净利润|Q1净利润|一季度营收|第一季度营收/.test(content);
+    const isSector = isSectorMove(content);
     const hasMacro = A_STOCK_KEYWORDS.some(kw => content.includes(kw));
-    if (isStockReport && !hasMacro) {
-      console.log(`   🚫 排除(个股财报): ${content.slice(0, 40)}...`);
+    
+    if (isStockReport && !isSector && !hasMacro) {
+      console.log(`   🚫 排除(纯个股财报): ${content.slice(0, 40)}...`);
       return false;
     }
 
@@ -277,7 +344,25 @@ function preFilter(items) {
   });
 }
 
-// ==================== 同事件聚合 ====================
+function isSectorMove(content) {
+  const sectorPatterns = [
+    /集体走高|集体上扬|集体大涨|集体飙升/,
+    /涨幅扩大至\d+%/,
+    /涨超.*涨超/,  // 至少2个涨超
+    /科网股|芯片股|半导体股|地产股|汽车股/,
+    /港股.*涨|恒生.*涨/,
+  ];
+  return sectorPatterns.some(p => p.test(content));
+}
+
+function hasUrgentTime(content) {
+  return URGENT_TIME_KEYWORDS.some(kw => {
+    if (kw.includes('.*')) return new RegExp(kw).test(content);
+    return content.includes(kw);
+  });
+}
+
+// ==================== 事件聚合 ====================
 function deduplicateByEvent(items) {
   const clusters = [];
   const usedIds = new Set();
@@ -289,7 +374,6 @@ function deduplicateByEvent(items) {
     let matched = false;
 
     for (const clusterDef of EVENT_CLUSTERS) {
-      // 检查是否匹配该事件簇
       const isMatch = clusterDef.keywords.some(kw => {
         if (kw.includes('.*')) {
           return new RegExp(kw).test(content);
@@ -311,7 +395,6 @@ function deduplicateByEvent(items) {
         } else {
           existing.allItems.push(item);
           if (item.hot === '爆') existing.hotMax = 2;
-          // 保留 source_link 更完整的
           if ((item.source_link || '').length > (existing.representative.source_link || '').length) {
             existing.representative = item;
           }
@@ -323,7 +406,6 @@ function deduplicateByEvent(items) {
       }
     }
 
-    // 未匹配到任何簇，单独成簇
     if (!matched) {
       clusters.push({
         clusterName: '其他',
@@ -336,7 +418,6 @@ function deduplicateByEvent(items) {
     }
   }
 
-  // 返回代表条目，附加簇信息
   return clusters.map(c => ({
     ...c.representative,
     _cluster: c.clusterName,
@@ -346,52 +427,98 @@ function deduplicateByEvent(items) {
   }));
 }
 
+// ==================== 重大更新判断（新增） ====================
+function isMajorUpdate(cluster, existing) {
+  const content = cluster.content || '';
+  
+  // 1. 时间敏感词
+  if (hasUrgentTime(content)) return true;
+  
+  // 2. 军事行动升级
+  if (content.includes('军事行动') && !existing.hasMilitary) return true;
+  if (content.includes('打击方案') && !existing.hasStrike) return true;
+  if (content.includes('行动开始') && !existing.hasAction) return true;
+  
+  // 3. 美军具体部署
+  if ((content.includes('15000名') || content.includes('导弹驱逐舰') || content.includes('航母') || content.includes('军机')) && !existing.hasDeployment) return true;
+  
+  // 4. 谈判破裂/逆转
+  if (content.includes('不可接受') && !existing.wasRejected) return true;
+  if (content.includes('违反停火') && !existing.wasBroken) return true;
+  
+  // 5. 领导人最新表态（与之前方向相反）
+  if (content.includes('重启空袭') || content.includes('恢复打击')) return true;
+  
+  return false;
+}
+
 // ==================== LLM 分析 ====================
-async function analyzeWithLLM(clusteredItems) {
-  // 构建输入文本
+async function analyzeWithLLM(clusteredItems, oilPrice) {
   const flashText = clusteredItems.map(i => {
     const sizeTag = i._clusterSize > 1 ? ` [本簇共${i._clusterSize}条]` : '';
-    return `[${i._clusterHot}]${sizeTag} ${i._cluster}\n时间: ${i.time}\n来源: ${i.source || '金十'}\n${i.content.slice(0, 300)}...`;
+    const oilTag = i._cluster === '原油能源' || i._cluster === '伊朗局势' || i._cluster === '中东战争' ? ' [原油核心]' : '';
+    const urgentTag = hasUrgentTime(i.content) ? ' [时间敏感]' : '';
+    return `[${i._clusterHot}]${sizeTag}${oilTag}${urgentTag} ${i._cluster}\n时间: ${i.time}\n来源: ${i.source || '金十'}\n${i.content.slice(0, 350)}...`;
   }).join('\n\n---\n\n');
 
-  const prompt = `你是一位宏观交易信号过滤专家。以下每个 [---] 分隔的是一个"事件簇"（同一事件的多条快讯聚合），请严格判断：
+  const holdingsText = MY_HOLDINGS.join('、');
 
-【核心标准】
-1. 是否已被市场充分定价？（预期内/反复更新的已知事实 = 价值0）
-2. 是否改变A股某板块的基本面预期？（政策、资金、供需）
-3. 是否可能引发次日开盘跳空/放量/板块轮动？
-4. 对"低估值、高股息、逆向布局"框架是否有启示？
+  const prompt = `你是一位宏观交易信号过滤专家。当前市场以原油价格为绝对核心锚定，所有分析必须围绕原油传导链展开。
+
+【当前原油状态】
+布伦特原油: $${oilPrice?.price || '未知'} (${oilPrice?.change > 0 ? '+' : ''}${oilPrice?.change || 0}%)
+
+【用户持仓】
+${holdingsText}
+
+【核心判断标准】
+1. 原油传导链（必须回答）：
+   - 该事件对原油供需的直接影响？
+   - 油价变动对A股的传导路径？
+   - 用户持仓中哪些会直接受益/受损？
+
+2. 时间敏感度：
+   - 事件是否即将发生（几小时内、今天、明天）？
+   - 是否需要立即行动，还是可以等开盘？
+
+3. 持仓匹配度：
+   - 该事件与用户持仓的相关性？
+   - 如果没有原油敞口，是否需要建议调仓？
 
 【输入事件簇】
 ${flashText}
 
 【输出要求】
-- 只输出 value_score >= 7 的事件
-- 每天最多 3 个事件
-- 如果全部价值低于7，输出空数组
-- 必须诚实标注"无价值"，不要强行解读
+- 原油相关事件自动 +2 分
+- 时间敏感事件（几小时内发生）自动 +2 分
+- 与用户持仓高相关的事件自动 +1 分
+- 只输出 value_score >= 7 的事件，每天最多 3 个
 
 【输出格式】（严格JSON）
 {
   "market_mood": "string, 恐慌/谨慎/中性/乐观/狂热",
   "noise_level": "integer, 0-100",
+  "oil_outlook": "string, 原油展望：看涨/看跌/震荡，50字内",
   "top_events": [
     {
       "cluster_name": "string, 事件名称",
       "value_score": "integer, 1-10",
-      "action": "string, 加仓/减仓/调仓/观望/止损/止盈",
+      "oil_impact": "string, 对原油的直接影响",
+      "transmission_chain": "string, 传导链：原油→?→?→A股",
+      "action": "string, 加仓/减仓/调仓/观望",
       "target": "string, 具体ETF或板块",
       "urgency": "string, 立即/开盘前/日内/不紧急",
-      "why": "string, 一句话说明核心价值",
-      "transmission": "string, 传导路径",
-      "duration": "string, 影响时长",
-      "contrarian": "string, 逆向机会？",
-      "risk": "string, 若误读的最大风险"
+      "time_sensitive": "boolean, 是否时间敏感",
+      "holding_match": "string, 与用户持仓匹配度：高/中/低/无",
+      "why": "string, 核心价值逻辑",
+      "contrarian": "string, 逆向机会",
+      "risk": "string, 误读风险"
     }
   ],
   "daily_strategy": {
     "overall_position": "string",
-    "core_logic": "string, 50字内",
+    "core_logic": "string, 50字内，必须包含原油判断",
+    "oil_trade": "string, 原油相关操作建议",
     "key_risks": ["string"],
     "watchlist": ["string"]
   }
@@ -403,7 +530,7 @@ ${flashText}
       {
         model: LLM_MODEL,
         messages: [
-          { role: "system", content: "你是冷酷的宏观信号过滤机器。对无价值信息要毫不留情。必须输出合法JSON。" },
+          { role: "system", content: "你是冷酷的原油宏观交易员。当前一切以油价为核心。对无价值信息要毫不留情。必须输出合法JSON。" },
           { role: "user", content: prompt }
         ],
         temperature: 0.1,
@@ -420,22 +547,24 @@ ${flashText}
     const parsed = JSON.parse(content);
 
     console.log('✅ LLM 分析完成');
-    console.log(`   情绪: ${parsed.market_mood} | 噪音: ${parsed.noise_level}%`);
+    console.log(`   情绪: ${parsed.market_mood} | 噪音: ${parsed.noise_level}% | 原油: ${parsed.oil_outlook || '无'}`);
     const events = parsed.top_events || [];
     events.forEach(e => {
-      console.log(`   🚨 [${e.urgency}] ${e.action} ${e.target} (${e.value_score}分)`);
+      const oilTag = e.oil_impact ? '[原油]' : '';
+      const timeTag = e.time_sensitive ? '[紧急]' : '';
+      console.log(`   🚨 ${oilTag}${timeTag}[${e.urgency}] ${e.action} ${e.target} (价值${e.value_score}, 匹配${e.holding_match})`);
     });
 
     return parsed;
 
   } catch (error) {
     console.error('❌ LLM 失败:', error.message?.slice(0, 200));
-    return { market_mood: '未知', noise_level: 0, top_events: [], daily_strategy: {} };
+    return { market_mood: '未知', noise_level: 0, oil_outlook: '', top_events: [], daily_strategy: {} };
   }
 }
 
 // ==================== 企微推送 ====================
-async function pushWechat(analysis, rawItems) {
+async function pushWechat(analysis, rawItems, oilPrice) {
   if (!WECHAT_WEBHOOK) {
     console.log('⚠️ 未配置 WECHAT_WEBHOOK');
     return;
@@ -448,10 +577,12 @@ async function pushWechat(analysis, rawItems) {
   }
 
   const now = formatTime();
+  const oilEmoji = oilPrice?.change > 0 ? '📈' : (oilPrice?.change < 0 ? '📉' : '➖');
 
-  let markdown = `## ⚡ 金十快讯信号 <font color="warning">${analysis.market_mood}</font>
-> 时间：${now} | 噪音率：${analysis.noise_level || '?'}%
+  let markdown = `## ${oilEmoji} 金十快讯 [原油核心] <font color="warning">${analysis.market_mood}</font>
+> 时间：${now} | 布伦特原油: **$${oilPrice?.price || '?'}** (${oilPrice?.change > 0 ? '+' : ''}${oilPrice?.change || 0}%)
 > 仓位建议：**${analysis.daily_strategy?.overall_position || '观望'}**
+> 原油展望：${analysis.oil_outlook || '无'}
 > 核心逻辑：${analysis.daily_strategy?.core_logic || '无'}
 
 ---
@@ -460,30 +591,39 @@ async function pushWechat(analysis, rawItems) {
 
   for (const event of events.slice(0, 3)) {
     const raw = rawItems.find(i => i._cluster === event.cluster_name);
+    const isOilCore = event.oil_impact && event.oil_impact !== '无';
+    const isUrgent = event.time_sensitive;
     const scoreColor = event.value_score >= 8 ? 'red' : (event.value_score >= 6 ? 'warning' : 'info');
+    const oilTag = isOilCore ? '<font color="red">[原油]</font>' : '';
+    const urgentTag = isUrgent ? '<font color="red">[紧急]</font>' : '';
 
-    markdown += `### <font color="${scoreColor}">【${event.urgency}】${event.action} ${event.target} (${event.value_score}分)</font>
+    markdown += `### ${oilTag}${urgentTag} <font color="${scoreColor}">【${event.urgency}】${event.action} ${event.target} (${event.value_score}分)</font>
 **事件：** ${event.cluster_name}
+**持仓匹配：** ${event.holding_match || '无'}
 **逻辑：** ${event.why}
-**传导：** ${event.transmission || '无'} | **时长：** ${event.duration || '未知'}
+
+**原油影响：** ${event.oil_impact || '无'}
+**传导链：** ${event.transmission_chain || '无'}
 
 **逆向机会：** ${event.contrarian || '无'}
 **误读风险：** ${event.risk || '无'}
 
-${raw ? `> 原文：${raw.content.slice(0, 80)}...` : ''}
+${raw ? `> 原文：${raw.content.slice(0, 100)}...` : ''}
 
 ---
 `;
   }
 
-  // 风险提示
-  if (analysis.daily_strategy?.key_risks?.length > 0) {
-    markdown += `\n### ⚠️ 今日警惕\n${analysis.daily_strategy.key_risks.map(r => `- ${r}`).join('\n')}\n`;
+  if (analysis.daily_strategy?.oil_trade) {
+    markdown += `\n### 🛢️ 原油操作\n${analysis.daily_strategy.oil_trade}\n`;
   }
 
-  // 观察清单
+  if (analysis.daily_strategy?.key_risks?.length > 0) {
+    markdown += `\n### ⚠️ 警惕\n${analysis.daily_strategy.key_risks.map(r => `- ${r}`).join('\n')}\n`;
+  }
+
   if (analysis.daily_strategy?.watchlist?.length > 0) {
-    markdown += `\n### 👀 重点观察\n${analysis.daily_strategy.watchlist.join('、')}\n`;
+    markdown += `\n### 👀 观察\n${analysis.daily_strategy.watchlist.join('、')}\n`;
   }
 
   try {
@@ -508,7 +648,7 @@ function loadState() {
 }
 
 function saveState(state) {
-  fs.mkdirSync(TEMP_DIR, { recursive: true });
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2));
 }
 
@@ -522,12 +662,10 @@ function saveRawData(allItems, newItems) {
   } catch {}
 
   const today = new Date().toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
-
-  // 合并新数据
   const existingIds = new Set(history.items.map(i => i.id));
   const uniqueNew = newItems.filter(i => !existingIds.has(i.id));
 
-  history.items = [...uniqueNew, ...history.items].slice(0, 300); // 保留最近300条
+  history.items = [...uniqueNew, ...history.items].slice(0, 300);
   history.date = today;
   history.lastUpdated = new Date().toISOString();
 
@@ -550,11 +688,11 @@ function saveAnalysis(analyzedItems) {
     }))
   });
 
-  history.analyses = history.analyses.slice(0, 50); // 保留50次
+  history.analyses = history.analyses.slice(0, 50);
   fs.writeFileSync(ANALYSIS_PATH, JSON.stringify(history, null, 2));
 }
 
-// ==================== 工具函数 ====================
+// ==================== 工具 ====================
 function formatTime() {
   return new Date().toLocaleString('zh-CN', {
     timeZone: 'Asia/Shanghai',
