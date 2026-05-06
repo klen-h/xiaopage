@@ -1,5 +1,5 @@
 {
-  "lastId": "20260506090224333800",
+  "lastId": "20260506100513109800",
   "pushedClusters": [
     {
       "cluster": "港股/中概股",
@@ -57,6 +57,18 @@
       "lastUpdateTime": "2026-05-04T10:02:20.785Z",
       "pushCount": 1,
       "hotMax": "沸",
+      "hadUrgent": false,
+      "hasMilitary": false,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "中美贸易",
+      "firstId": "20260506100513109800",
+      "firstTime": "2026-05-06T02:20:49.859Z",
+      "lastUpdateId": "20260506100513109800",
+      "lastUpdateTime": "2026-05-06T02:20:49.859Z",
+      "pushCount": 1,
+      "hotMax": "爆",
       "hadUrgent": false,
       "hasMilitary": false,
       "hasDeployment": false
