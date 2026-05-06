@@ -1,5 +1,5 @@
 {
-  "lastId": "20260506200441053800",
+  "lastId": "20260506201921347800",
   "pushedClusters": [
     {
       "cluster": "中美贸易",
@@ -17,8 +17,8 @@
       "cluster": "其他",
       "firstId": "20260506123241985800",
       "firstTime": "2026-05-06T05:50:55.580Z",
-      "lastUpdateId": "20260506195541348800",
-      "lastUpdateTime": "2026-05-06T12:10:32.980Z",
+      "lastUpdateId": "20260506201532487800",
+      "lastUpdateTime": "2026-05-06T12:30:39.682Z",
       "pushCount": 2,
       "hotMax": "沸",
       "hadUrgent": false,
@@ -29,8 +29,8 @@
       "cluster": "伊朗局势",
       "firstId": "20260506123916480800",
       "firstTime": "2026-05-06T05:50:55.580Z",
-      "lastUpdateId": "20260506194228239800",
-      "lastUpdateTime": "2026-05-06T11:50:27.248Z",
+      "lastUpdateId": "20260506201834307800",
+      "lastUpdateTime": "2026-05-06T12:30:39.682Z",
       "pushCount": 1,
       "hotMax": "沸",
       "hadUrgent": false,
