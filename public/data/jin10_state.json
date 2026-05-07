@@ -1,5 +1,5 @@
 {
-  "lastId": "20260507154513432800",
+  "lastId": "20260507160133372800",
   "pushedClusters": [
     {
       "cluster": "中美贸易",
@@ -47,6 +47,18 @@
       "hotMax": "沸",
       "hadUrgent": true,
       "hasMilitary": true,
+      "hasDeployment": false
+    },
+    {
+      "cluster": "黄金贵金属",
+      "firstId": "20260507160133372800",
+      "firstTime": "2026-05-07T08:11:12.959Z",
+      "lastUpdateId": "20260507160133372800",
+      "lastUpdateTime": "2026-05-07T08:11:12.959Z",
+      "pushCount": 1,
+      "hotMax": "爆",
+      "hadUrgent": false,
+      "hasMilitary": false,
       "hasDeployment": false
     }
   ]
