@@ -41,3 +41,9 @@ temp_test_audio/
 
 # Embedded repositories
 lishaoxia-value-detector/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
