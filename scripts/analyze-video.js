@@ -216,7 +216,7 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
       fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
       console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
       // 企微通知
-      pushWechat(analysisJson.title || videoTitle || '未命名', bvid);
+      pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.operation_advice || '无操作建议');
     } else {
       console.error('处理失败');
     }
@@ -546,7 +546,7 @@ async function downloadAudioAndTranscribe(videoUrl) {
 
 
 // ==================== 企微推送 ====================
-async function pushWechat(title, bvid) {
+async function pushWechat(title, bvid, operationAdvice) {
   if (!WECHAT_WEBHOOK) {
     console.log('⚠️ 未配置 WECHAT_WEBHOOK');
     return;
@@ -555,7 +555,7 @@ async function pushWechat(title, bvid) {
   try {
     await axios.post(
       WECHAT_WEBHOOK,
-      { msgtype: 'markdown', markdown: { content: `[${title}](${url})` } },
+      { msgtype: 'markdown', markdown: { content: `[${title}](${url})\n${operationAdvice}` } },
       { timeout: 15000 }
     );
     console.log('📲 企微推送成功');
