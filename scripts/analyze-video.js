@@ -216,7 +216,7 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
       fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
       console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
       // 企微通知
-      pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.operation_advice || '无操作建议');
+      pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
     } else {
       console.error('处理失败');
     }
