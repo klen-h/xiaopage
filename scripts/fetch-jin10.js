@@ -12,8 +12,8 @@ import 'dotenv/config';
 const JIN10_COOKIE = process.env.JIN10_COOKIE || '';
 const WECHAT_WEBHOOK = process.env.WECHAT_WEBHOOK || '';
 const LLM_API_KEY = process.env.LLM_API_KEY;
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://api.siliconflow.cn/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
+const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
 
 const DATA_DIR = path.resolve('public/data');
 const STATE_PATH = path.join(DATA_DIR, 'jin10_state.json');
@@ -118,6 +118,27 @@ const EVENT_CLUSTERS = [
 ];
 
 // ==================== 主入口 ====================
+// 带限流重试的LLM请求：免费模型有TPM/RPM限制，命中429时退避重试
+async function postWithRetry(url, body, config, maxRetries = 4) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await axios.post(url, body, config);
+    } catch (error) {
+      const status = error.response?.status;
+      const code = error.response?.data?.error?.code;
+      const rateLimited = status === 429 || code === '429003';
+      if (!rateLimited || attempt === maxRetries) throw error;
+      const waitSec = attempt * 30;
+      console.log(`⚠️ 命中限流(429)，等待${waitSec}秒后第${attempt}次重试...`);
+      await sleep(waitSec * 1000);
+    }
+  }
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function main() {
   console.log(`\n[${formatTime()}] 🚀 金十快讯监控启动 [原油核心+盘面验证模式]`);
 
@@ -516,7 +537,7 @@ ${flashText}
  }`;
 
   try {
-    const response = await axios.post(
+    const response = await postWithRetry(
       `${LLM_BASE_URL}/chat/completions`,
       {
         model: LLM_MODEL,
@@ -525,12 +546,12 @@ ${flashText}
           { role: "user", content: prompt }
         ],
         temperature: 0.1,
-        max_tokens: 4096,
+        max_tokens: 16384,  // 思考模型的思考token也计入max_tokens，需留足余量
         response_format: { type: "json_object" }
       },
       {
         headers: { 'Authorization': `Bearer ${LLM_API_KEY}` },
-        timeout: 120000
+        timeout: 600000
       }
     );
 

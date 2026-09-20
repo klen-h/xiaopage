@@ -21,9 +21,9 @@ import 'dotenv/config';
 
 // ==================== 配置区域 ====================
 const LLM_API_KEY = process.env.LLM_API_KEY;
-// LLM配置：默认用硅基流动SiliconFlow（国内免费），也可换成其他OpenAI兼容API
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://api.siliconflow.cn/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-ai/DeepSeek-V3';
+// LLM配置：默认用商汤日日新SenseNova（OpenAI兼容），也可换成其他OpenAI兼容API
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
+const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID，可改成别的UP主
 const DATA_PATH = path.resolve('public/data/videos.json');
 
@@ -450,7 +450,7 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   ${text}`;
 
   try {
-    const response = await axios.post(
+    const response = await postWithRetry(
       `${LLM_BASE_URL}/chat/completions`,
       {
         model: LLM_MODEL,
@@ -459,7 +459,7 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
           { role: "user", content: prompt }
         ],
         temperature: 0.2,
-        max_tokens: 8192,
+        max_tokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
         response_format: { type: "json_object" }   // 可以保留
       },
       {
@@ -474,6 +474,24 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   } catch (error) {
     console.error('\n❌ AI分析失败:', error);
     if (error.code) console.error('错误码:', error.code);
+  }
+}
+
+// ==================== LLM 请求（带429限流重试）====================
+// 免费模型有TPM/RPM限流，命中429时按退避等待后重试
+async function postWithRetry(url, body, config, maxRetries = 4) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await axios.post(url, body, config);
+    } catch (error) {
+      const status = error.response?.status;
+      const code = error.response?.data?.error?.code;
+      const rateLimited = status === 429 || code === '429003';
+      if (!rateLimited || attempt === maxRetries) throw error;
+      const waitSec = attempt * 30;
+      console.log(`⚠️ 命中限流(429)，等待${waitSec}秒后第${attempt}次重试...`);
+      await sleep(waitSec * 1000);
+    }
   }
 }
 

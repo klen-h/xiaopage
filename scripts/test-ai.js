@@ -2,8 +2,8 @@ import axios from 'axios';
 import 'dotenv/config';
 
 const LLM_API_KEY = process.env.LLM_API_KEY;
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://api.groq.com/openai/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'llama-3.3-70b-versatile';
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
+const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
 
 // 获取当前时间：YYYY-MM-DD HH:MM
 const now = new Date();
@@ -92,7 +92,7 @@ try {
         { role: "user", content: prompt }
       ],
       temperature: 0.2,
-      max_tokens: 8192,
+      max_tokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
       response_format: { type: "json_object" }   // 可以保留
     },
     {
