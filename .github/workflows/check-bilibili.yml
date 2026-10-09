@@ -3,10 +3,16 @@ name: 检查B站新视频
 on:
   workflow_dispatch:
 
+# 定时器每30分钟触发一次，而长视频转录可能跑很久：
+# 同一时间只保留一个运行，避免两个任务同时处理同一视频导致重复推送
+concurrency:
+  group: check-bilibili
+  cancel-in-progress: false
+
 jobs:
   check-new-videos:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 120
     permissions:
       contents: write
 
@@ -69,13 +75,22 @@ jobs:
           LLM_FALLBACK_MODELS: ${{ secrets.LLM_FALLBACK_MODELS }}
           BILI_UID: ${{ secrets.BILI_UID }}
           WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
+          # 额外解读的UP主（逗号分隔的UID），留空则用脚本内默认值
+          EXTRA_UPS: ${{ secrets.EXTRA_UPS }}
+          # 额外UP主：视频时长上限（秒）与每次运行最多处理数量
+          EXTRA_UP_MAX_DURATION: ${{ secrets.EXTRA_UP_MAX_DURATION }}
+          EXTRA_UP_MAX_PER_RUN: ${{ secrets.EXTRA_UP_MAX_PER_RUN }}
+          # 可选：额外UP主推送到另一个企微群，不配则用上面的 WECHAT_WEBHOOK
+          EXTRA_WECHAT_WEBHOOK: ${{ secrets.EXTRA_WECHAT_WEBHOOK }}
+          # 可选：faster-whisper 模型大小（base/small/medium），留空默认 base
+          WHISPER_MODEL: ${{ secrets.WHISPER_MODEL }}
         run: node scripts/analyze-video.js --check-new
 
       - name: 提交更新
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add public/data/videos.json
+          git add public/data/
           if ! git diff --staged --quiet; then
             git commit -m "📊 更新视频分析数据 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')"
             git push

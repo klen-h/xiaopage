@@ -18,11 +18,55 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import 'dotenv/config';
-import { chatJSON, printLLMConfig, checkLLMHealth } from './utils/llm.js';
+import { chat, chatJSON, printLLMConfig, checkLLMHealth } from './utils/llm.js';
+import { truncateByBytes } from './utils/text.js';
 
 // ==================== 配置区域 ====================
-const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID，可改成别的UP主
+const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID（主UP主，走 JSON 归档流程）
 const DATA_PATH = path.resolve('public/data/videos.json');
+
+// 额外解读的UP主：只做文字解读 + 企微推送，不写入 videos.json
+// 格式：EXTRA_UPS="1039025435,123456"
+const EXTRA_UPS = (process.env.EXTRA_UPS || '1039025435')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+// 额外UP主的显示名（企微推送用），未配置则显示 UID
+const EXTRA_UP_NAMES = {
+  '1039025435': '战国时代_姜汁汽水'
+};
+
+// 额外UP主视频时长上限（秒）。地缘/财经类视频通常较长，默认 120 分钟
+const EXTRA_UP_MAX_DURATION = Number(process.env.EXTRA_UP_MAX_DURATION || 7200);
+// 额外UP主每次运行最多处理的视频数。定时器每30分钟触发一次，每次处理1个足够，避免单次任务过久
+const EXTRA_UP_MAX_PER_RUN = Number(process.env.EXTRA_UP_MAX_PER_RUN || 1);
+// 单条转录文本送 LLM 的上限（字符），超长视频防止请求过大/过慢
+const TRANSCRIPT_MAX_CHARS = Number(process.env.TRANSCRIPT_MAX_CHARS || 80000);
+
+// faster-whisper 模型大小：base 最省时间，长视频可换 small / medium 提升准确率
+const WHISPER_MODEL = process.env.WHISPER_MODEL || 'base';
+
+const TARGETS = [
+  {
+    uid: BILI_UID,
+    name: process.env.BILI_MAIN_NAME || '李大霄',
+    mode: 'json',           // 生成结构化 JSON 并写入 public/data/videos.json
+    maxDuration: Number(process.env.BILI_MAX_DURATION || 900),
+    maxPerRun: 5,
+    statePath: null         // 去重依赖 videos.json 中的 bvid
+  },
+  ...EXTRA_UPS.map(uid => ({
+    uid,
+    name: process.env[`BILI_UP_NAME_${uid}`] || EXTRA_UP_NAMES[uid] || `UP_${uid}`,
+    mode: 'text',           // 只生成文字解读，推送企微
+    maxDuration: EXTRA_UP_MAX_DURATION,
+    maxPerRun: EXTRA_UP_MAX_PER_RUN,
+    statePath: path.resolve('public/data', `up_${uid}_state.json`),
+    // 可选：额外UP主单独推送到另一个企微群（不配则用主 WECHAT_WEBHOOK）
+    webhook: process.env.EXTRA_WECHAT_WEBHOOK || ''
+  }))
+];
 
 // Cookie配置：GitHub Actions无浏览器，需通过BILI_COOKIE环境变量传入
 const BILI_COOKIE = process.env.BILI_COOKIE || ''; // 直接Cookie字符串
@@ -56,9 +100,42 @@ const mode = process.argv[2];
 async function main() {
   try {
     if (mode === '--check-new') {
-      await checkAndProcessNewVideos();
+      // LLM 连通性自检，避免白白跑完下载+语音转录才发现请求打不通
+      console.log('正在进行 LLM 连通性自检...');
+      await checkLLMHealth();
+
+      for (const target of TARGETS) {
+        console.log(`\n========== [${target.name}] UID ${target.uid} (${target.mode === 'json' ? 'JSON归档' : '文字解读'}) ==========`);
+        try {
+          await checkAndProcessNewVideos(target);
+        } catch (error) {
+          console.error(`[${target.name}] 处理失败:`, error.message);
+        }
+        await sleep(3000);
+      }
+    } else if (mode === '--text-from-file') {
+      // 本地调试：跳过下载/转录，直接用现成文本测试文字解读
+      // 用法: node scripts/analyze-video.js --text-from-file temp/xxx.txt [--push BV号]
+      const file = process.argv[3];
+      if (!file || !fs.existsSync(file)) {
+        console.log('用法: node scripts/analyze-video.js --text-from-file <转录文本.txt> [--push <BV号>]');
+        process.exit(1);
+      }
+      const target = TARGETS[1] || { ...TARGETS[0], mode: 'text' };
+      const text = fs.readFileSync(file, 'utf-8');
+      const result = await interpretTranscriptAsText(text, path.basename(file), '', target);
+      if (result) {
+        console.log('\n--- 解读结果 ---\n' + result);
+        const pushIdx = process.argv.indexOf('--push');
+        if (pushIdx !== -1) {
+          await pushWechatPlain(path.basename(file), process.argv[pushIdx + 1] || '', result, target);
+        }
+      }
     } else if (mode?.includes('bilibili.com')) {
-      await processSingleVideo(mode);
+      // 加 --text 可手动测试文字解读模式：node scripts/analyze-video.js <链接> --text
+      const asText = process.argv[3] === '--text';
+      const target = asText ? { ...(TARGETS[1] || TARGETS[0]), mode: 'text' } : TARGETS[0];
+      await processSingleVideo(mode, null, null, null, target);
     } else {
       console.log('用法:');
       console.log('  node scripts/analyze-video.js <B站视频链接>');
@@ -72,16 +149,12 @@ async function main() {
 }
 
 // ==================== 自动检测新视频 ====================
-async function checkAndProcessNewVideos() {
-  // 先做 LLM 连通性自检，避免白白跑完下载+语音转录才发现请求打不通
-  console.log('正在进行 LLM 连通性自检...');
-  await checkLLMHealth();
-
+async function checkAndProcessNewVideos(target) {
   console.log('正在检测新视频（通过 yt-dlp）...');
 
   // 用 yt-dlp 获取UP主视频列表
   // flat-playlist 模式下B站不返回标题，只取ID，标题在下载时获取
-  const spaceUrl = `https://space.bilibili.com/${BILI_UID}/video`;
+  const spaceUrl = `https://space.bilibili.com/${target.uid}/video`;
   let output;
   try {
     output = execSync(
@@ -136,9 +209,9 @@ async function checkAndProcessNewVideos() {
     } catch {
       // 标题或日期获取失败，保持null
     }
-    // 过滤时长超过15分钟（900秒）的视频
-    if (duration && duration > 900) {
-      console.log(`跳过超长视频: ${bvid.trim()} - ${title || '无标题'} (${Math.floor(duration / 60)}分${duration % 60}秒)`);
+    // 过滤超长视频
+    if (duration && duration > target.maxDuration) {
+      console.log(`跳过超长视频: ${bvid.trim()} - ${title || '无标题'} (${Math.floor(duration / 60)}分${duration % 60}秒，上限${Math.floor(target.maxDuration / 60)}分钟)`);
       continue;
     }
     videos.push({ bvid: bvid.trim(), title, duration, date: formattedDate });
@@ -147,13 +220,7 @@ async function checkAndProcessNewVideos() {
   console.log(`获取到 ${videos.length} 个视频`);
 
   // 读取已处理的视频BV号
-  let processedBVs = [];
-  try {
-    const data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
-    processedBVs = data.map(v => v.bvid || '').filter(Boolean);
-  } catch {
-    processedBVs = [];
-  }
+  const processedBVs = readProcessedBVs(target);
 
   let processedCount = 0;
   for (const video of videos) {
@@ -162,20 +229,62 @@ async function checkAndProcessNewVideos() {
       continue;
     }
 
+    if (processedCount >= target.maxPerRun) {
+      console.log(`⚠️ 本次运行已达处理上限(${target.maxPerRun}个)，剩余视频留待下次: ${video.bvid}`);
+      break;
+    }
+
     const videoUrl = `https://www.bilibili.com/video/${video.bvid}`;
     console.log(`\n发现新视频: ${video.bvid} - ${video.title || '无标题'}`);
-    await processSingleVideo(videoUrl, video.title, video.bvid, video.date);
+    await processSingleVideo(videoUrl, video.title, video.bvid, video.date, target, video.duration);
     processedCount++;
 
     // 避免请求过快
     await sleep(3000);
   }
 
-  console.log(`\n处理完成，新增 ${processedCount} 个视频`);
+  console.log(`\n[${target.name}] 处理完成，新增 ${processedCount} 个视频`);
+}
+
+// 已处理的BV号：json模式读 videos.json，文字模式读独立状态文件
+function readProcessedBVs(target) {
+  if (target.mode === 'json') {
+    try {
+      const data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+      return data.map(v => v.bvid || '').filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  return readProcessedState(target.statePath).processed.map(v => v.bvid).filter(Boolean);
+}
+
+// 记录已处理（仅文字模式需要，避免重复推送）
+function markProcessed(target, video) {
+  if (target.mode === 'json') return;
+  const state = readProcessedState(target.statePath);
+  state.processed = state.processed.filter(v => v.bvid !== video.bvid);
+  state.processed.unshift({ ...video, pushedAt: new Date().toISOString() });
+  state.updatedAt = new Date().toISOString();
+  // 只保留最近100条
+  state.processed = state.processed.slice(0, 100);
+  fs.mkdirSync(path.dirname(target.statePath), { recursive: true });
+  fs.writeFileSync(target.statePath, JSON.stringify(state, null, 2), 'utf-8');
+}
+
+function readProcessedState(statePath) {
+  try {
+    const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    if (Array.isArray(state)) return { processed: state.map(v => (typeof v === 'string' ? { bvid: v } : v)) };
+    return { processed: state.processed || [] };
+  } catch {
+    return { processed: [] };
+  }
 }
 
 // ==================== 处理单个视频 ====================
-async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, knownDate = null) {
+async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, knownDate = null, target = TARGETS[0], durationSec = 0) {
   try {
     // 1. 获取标题
     let videoTitle = knownTitle;
@@ -190,13 +299,13 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
       }
     }
 
-    // 2. 获取字幕（优先B站AI字幕，失败则使用阿里云语音识别）
+    // 2. 获取字幕（优先B站AI字幕，失败则使用语音转录）
     console.log('正在获取字幕...');
     let transcript = await downloadBilibiliSubtitle(videoUrl);
     
     if (!transcript) {
-      console.log('B站AI字幕不可用，尝试阿里云语音识别...');
-      transcript = await downloadAudioAndTranscribe(videoUrl);
+      console.log('B站AI字幕不可用，改用 faster-whisper 语音转录...');
+      transcript = await downloadAudioAndTranscribe(videoUrl, durationSec);
     }
 
     if (!transcript) {
@@ -204,22 +313,41 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
       return;
     }
 
-    // 3. AI分析
-    console.log('正在AI分析...');
-    const analysisJson = await analyzeTranscript(transcript, videoTitle, bvid, knownDate);
+    // 3. AI 分析
+    if (target.mode === 'json') {
+      console.log('正在AI分析...');
+      const analysisJson = await analyzeTranscript(transcript, videoTitle, bvid, knownDate);
 
-    // 4. 写入数据
-    const data = fs.existsSync(DATA_PATH)
-      ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'))
-      : [];
-    if(analysisJson) {
-      data.unshift(analysisJson);
-      fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
-      console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
-      // 企微通知
-      pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
+      // 4. 写入数据
+      const data = fs.existsSync(DATA_PATH)
+        ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'))
+        : [];
+      if (analysisJson) {
+        data.unshift(analysisJson);
+        fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
+        console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
+        // 企微通知
+        await pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
+      } else {
+        console.error('处理失败');
+      }
     } else {
-      console.error('处理失败');
+      // 文字解读模式：不生成 JSON，只推送企微
+      console.log('正在AI解读（文字模式）...');
+      const plainText = await interpretTranscriptAsText(transcript, videoTitle, bvid, target);
+
+      if (!plainText) {
+        console.error('解读失败，跳过推送');
+        return;
+      }
+
+      const pushed = await pushWechatPlain(videoTitle, bvid, plainText, target);
+      if (pushed) {
+        markProcessed(target, { bvid, title: videoTitle, date: knownDate });
+        console.log('✅ 解读已推送并记录');
+      } else {
+        console.error('⚠️ 推送失败，本次不记录，下次运行会重试');
+      }
     }
 
   } catch (error) {
@@ -468,14 +596,115 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   }
 }
 
-// ==================== faster-whisper 语音识别（Node 调 Python）====================
+// ==================== 文字解读模式（不生成 JSON，直接推送）====================
+/**
+ * 对转录文本做“人话解读”，返回纯文本（不是JSON）
+ */
+async function interpretTranscriptAsText(text, knownTitle = null, bvid = null, target) {
+  console.log(`正在解读「${target.name}」的视频（文字模式）...`);
+
+  // 超长视频（如 2 小时以上）的转录文本可能过大，头尾截取保留最相关的部分
+  let sourceText = text;
+  if (sourceText.length > TRANSCRIPT_MAX_CHARS) {
+    const headLen = Math.floor(TRANSCRIPT_MAX_CHARS * 0.6);
+    const tailLen = TRANSCRIPT_MAX_CHARS - headLen;
+    console.log(`⚠️ 转录文本过长(${text.length}字)，截取前${headLen}字+后${tailLen}字送分析`);
+    sourceText = `${text.slice(0, headLen)}\n\n……（中间省略 ${text.length - TRANSCRIPT_MAX_CHARS} 字）……\n\n${text.slice(-tailLen)}`;
+  }
+
+  const prompt = `你是资深宏观 / 地缘财经内容分析师。下面是B站UP主「${target.name}」的视频《${knownTitle || '未知标题'}》的语音转录文本（口语化，可能存在同音字和错别字，请自行纠错后理解）。
+
+请输出一份可以直接发到企业微信的中文解读。要求：
+- 不要 JSON，不要 markdown 代码块，用纯文本 + 换行
+- 严格按下面的小节输出，每节都要有内容，没有信息就写「未提及」
+- 保留原文关键表述和具体数字，但要做成人话，不要照抄口语
+
+【一句话结论】他这次到底在讲什么，倾向偏多还是偏空
+【核心观点】3-5条，每条以「·」开头
+【关键数据与信息】文中出现的具体数字 / 事件 / 时间点
+【推演链条】他是怎么得出结论的：事实→推演→资产含义
+【涉及资产】提到的市场、板块、品种，以及对应偏向
+【值得警惕】他提到的风险，以及他可能回避或忽略的风险
+【可信度提示】指出可能的错误数据、情绪化渲染或需要自行核实的部分
+
+其他要求：总长控制在 700 字以内（企业微信推送上限较短，宁短勿长）；只基于转录文本，不要编造事实；保持中立，不要给出具体买卖建议。
+
+转录文本：
+${sourceText}`;
+
+  try {
+    const content = await chat(
+      [
+        { role: 'system', content: '你是客观、克制的宏观与地缘财经分析师，擅长把口语化内容提炼成结构化文字笔记，从不编造事实。' },
+        { role: 'user', content: prompt }
+      ],
+      { temperature: 0.4, maxTokens: 4096, timeout: 600000 }
+    );
+
+    const result = content?.choices?.[0]?.message?.content?.trim();
+    if (!result) {
+      console.error('❌ 解读内容为空');
+      return null;
+    }
+    console.log(`✅ 解读完成（${result.length} 字）`);
+    console.log(result.slice(0, 300) + '...');
+    return result;
+  } catch (error) {
+    console.error('\n❌ 解读失败:', error.message);
+    return null;
+  }
+}
+
+// ==================== 企微推送 ====================
+// 企微 markdown 消息上限 4096 字节，留出余量
+const WECHAT_MARKDOWN_LIMIT = 3800;
+
+/** 发送 markdown 消息到企微机器人 */
+async function sendWechatMarkdown(content, webhook = WECHAT_WEBHOOK) {
+  if (!webhook) {
+    console.log('⚠️ 未配置 WECHAT_WEBHOOK，跳过推送');
+    return false;
+  }
+  try {
+    await axios.post(
+      webhook,
+      { msgtype: 'markdown', markdown: { content: truncateByBytes(content, WECHAT_MARKDOWN_LIMIT) } },
+      { timeout: 15000 }
+    );
+    console.log('📲 企微推送成功');
+    return true;
+  } catch (error) {
+    console.error('❌ 企微推送失败:', error.response?.data || error.message);
+    return false;
+  }
+}
+
+/** 文字解读推送：标题 + 原视频链接 + 解读正文 */
+async function pushWechatPlain(title, bvid, body, target) {
+  const header = `**【${target.name}】${title || '新视频'}**\n[点击观看原视频](https://www.bilibili.com/video/${bvid})\n\n`;
+  return sendWechatMarkdown(header + body, target.webhook || WECHAT_WEBHOOK);
+}
+
+/** 李大霄 JSON 模式推送：带站内分析页链接 */
+async function pushWechat(title, bvid, operationAdvice) {
+  const url = `https://xiaopage.1213962718.workers.dev/#/analysis/${bvid}`;
+  return sendWechatMarkdown(`[${title}](${url})\n${operationAdvice}`);
+}
+
 
 /**
  * 下载音频并调用本地 faster-whisper 识别
+ * @param {string} videoUrl
+ * @param {number} durationSec 视频时长（秒），用于动态放宽超时；未知时按 10 分钟估算
  */
-async function downloadAudioAndTranscribe(videoUrl) {
+async function downloadAudioAndTranscribe(videoUrl, durationSec = 0) {
   const tempDir = path.resolve('temp');
   if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+
+  const estSec = durationSec || 600;
+  // 长视频下载/识别都更慢，动态放宽超时上限
+  const downloadTimeout = Math.max(180000, Math.ceil(estSec / 3) * 1000);
+  const asrTimeout = Math.max(600000, Math.ceil(estSec * 0.7) * 1000);
   
   // 用 m4a 格式，不需要 ffmpeg 转码
   const basePath = path.join(tempDir, `audio_${Date.now()}`);
@@ -485,7 +714,7 @@ async function downloadAudioAndTranscribe(videoUrl) {
     
     // 下载最佳音频流（B站通常是 m4a/aac）
     const cmd = `yt-dlp ${YT_DLP_COOKIE_ARGS} -f "ba" --no-playlist -o "${basePath}.%(ext)s" "${videoUrl}"`;
-    execSync(cmd, { encoding: 'utf-8', timeout: 120000, stdio: 'pipe' });
+    execSync(cmd, { encoding: 'utf-8', timeout: downloadTimeout, stdio: 'pipe' });
     
     // 找到实际下载的文件
     const files = fs.readdirSync(tempDir);
@@ -496,14 +725,14 @@ async function downloadAudioAndTranscribe(videoUrl) {
     console.log(`音频已下载: ${audioPath}`);
     
     // 调用 Python 脚本识别
-    console.log('正在使用 faster-whisper 识别...');
+    console.log(`正在使用 faster-whisper(${WHISPER_MODEL}) 识别（最长等待 ${Math.round(asrTimeout / 60000)} 分钟）...`);
     const scriptPath = path.resolve('scripts', 'transcribe.py');
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     const output = execSync(
-      `${pythonCmd} "${scriptPath}" "${audioPath}" "base"`,
+      `${pythonCmd} "${scriptPath}" "${audioPath}" "${WHISPER_MODEL}"`,
       { 
         encoding: 'utf-8', 
-        timeout: 300000,
+        timeout: asrTimeout,
         stdio: 'pipe',
         env: { ...process.env, PYTHONUNBUFFERED: '1' }
       }
@@ -532,26 +761,6 @@ async function downloadAudioAndTranscribe(videoUrl) {
       });
     } catch {}
     return null;
-  }
-}
-
-
-// ==================== 企微推送 ====================
-async function pushWechat(title, bvid, operationAdvice) {
-  if (!WECHAT_WEBHOOK) {
-    console.log('⚠️ 未配置 WECHAT_WEBHOOK');
-    return;
-  }
-  const url = `https://xiaopage.1213962718.workers.dev/#/analysis/${bvid}`;
-  try {
-    await axios.post(
-      WECHAT_WEBHOOK,
-      { msgtype: 'markdown', markdown: { content: `[${title}](${url})\n${operationAdvice}` } },
-      { timeout: 15000 }
-    );
-    console.log('📲 企微推送成功');
-  } catch (error) {
-    console.error('❌ 企微推送失败:', error.response?.data || error.message);
   }
 }
 

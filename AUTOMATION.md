@@ -31,6 +31,41 @@ node scripts/analyze-video.js "https://www.bilibili.com/video/BV1xxxxxx"
 3.  **AI 深度分析**：将转录文本发送给 LLM（如 GPT-4o），按照 `AnalysisItem` 格式自动生成标题、总结、核心观点、策略博弈等 JSON 数据。
 4.  **自动更新**：分析结果将自动追加到 `src/data/videos.json`，刷新页面即可看到新内容。
 
+## 多 UP 主支持
+
+`scripts/analyze-video.js --check-new` 会依次处理 `TARGETS` 里的所有 UP 主：
+
+| UP 主 | UID | 处理方式 |
+| --- | --- | --- |
+| 李大霄 | `BILI_UID`（默认 2137589551） | 生成结构化 JSON，写入 `public/data/videos.json`，推送站内分析页链接 |
+| 额外 UP 主 | `EXTRA_UPS`（默认 1039025435，战国时代_姜汁汽水） | 只做文字解读，直接推送企微，不入库 |
+
+相关环境变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `EXTRA_UPS` | 额外 UP 主 UID，逗号分隔；留空用默认值，设为 `-` 之类无效值可清空 |
+| `EXTRA_UP_MAX_DURATION` | 额外 UP 主视频时长上限（秒），默认 7200（120 分钟） |
+| `EXTRA_UP_MAX_PER_RUN` | 每次运行最多处理几个额外 UP 主视频，默认 1（定时器每 30 分钟一次，足够及时） |
+| `EXTRA_WECHAT_WEBHOOK` | 可选，额外 UP 主推送到另一个企微群；不配则与李大霄同一个群 |
+| `TRANSCRIPT_MAX_CHARS` | 单条转录送给 LLM 的字符上限，默认 80000，超长按头 60% + 尾 40% 截取 |
+| `WHISPER_MODEL` | 可选，faster-whisper 模型大小（base/small/medium），默认 base；换模型后记得同步更新 workflow 里的 `whisper-model-base-` 缓存 key |
+
+说明：
+
+- 额外 UP 主的已处理记录写在 `public/data/up_<uid>_state.json`，只保留最近 100 条，避免重复推送。
+- 文字解读固定结构和 700 字长度上限，超过企微 4096 字节限制会自动按字节截断并提示「内容过长已截断」。
+- 长视频会走 faster-whisper 语音转录（耗时约为视频时长的 0.3~0.7 倍），因此 workflow 超时放宽到 120 分钟，并加了 `concurrency` 串行锁：定时器每 30 分钟触发一次时，同时只会有一个任务在跑，避免重复推送。
+
+本地调试（跳过下载和转录，直接用现成文本测解读）：
+
+```bash
+# 只打印解读结果
+node scripts/analyze-video.js --text-from-file temp/transcript.txt
+# 顺便推送企微（后面跟 BV 号用于生成原视频链接）
+node scripts/analyze-video.js --text-from-file temp/transcript.txt --push BV1xxxxxxxx
+```
+
 ## LLM 配置与故障排查
 
 统一由 `scripts/utils/llm.js` 负责调用（OpenAI 兼容接口），相关环境变量：
