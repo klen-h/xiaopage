@@ -31,6 +31,31 @@ node scripts/analyze-video.js "https://www.bilibili.com/video/BV1xxxxxx"
 3.  **AI 深度分析**：将转录文本发送给 LLM（如 GPT-4o），按照 `AnalysisItem` 格式自动生成标题、总结、核心观点、策略博弈等 JSON 数据。
 4.  **自动更新**：分析结果将自动追加到 `src/data/videos.json`，刷新页面即可看到新内容。
 
+## LLM 配置与故障排查
+
+统一由 `scripts/utils/llm.js` 负责调用（OpenAI 兼容接口），相关环境变量：
+
+| 变量 | 说明 |
+| --- | --- |
+| `LLM_API_KEY` | 必填 |
+| `LLM_BASE_URL` | 选填，默认 `https://token.sensenova.cn/v1`，不要带 `/chat/completions` |
+| `LLM_MODEL` | 选填，默认 `deepseek-v4-flash` |
+| `LLM_FALLBACK_MODELS` | 选填，逗号分隔的显式备选模型 |
+| `LLM_AUTO_FALLBACK` | 设为 `0` 可关闭「模型失效自动切换」 |
+| `LLM_NO_JSON_FORMAT` | 设为 `1` 时不发送 `response_format`（部分模型不支持） |
+
+诊断命令（会列出当前厂商可用模型、并做一次真实请求）：
+
+```bash
+npm run check-llm
+```
+
+常见错误：
+
+- **HTTP 404 `model is not found`**：中转站模型已下线/改名。跑 `npm run check-llm`，把 `LLM_MODEL` 改成列表中的名字即可；脚本本身也会自动切换到可用模型继续跑。
+- **HTTP 401 / 403**：`LLM_API_KEY` 过期或余额不足，不会重试，直接报错。
+- **HTTP 429**：脚本按 30s / 60s / 90s 退避自动重试。
+
 ## 手动更新（回退方案）
 
 如果自动化脚本失败，你仍然可以手动更新：

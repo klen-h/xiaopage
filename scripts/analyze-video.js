@@ -18,12 +18,9 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import 'dotenv/config';
+import { chatJSON, printLLMConfig, checkLLMHealth } from './utils/llm.js';
 
 // ==================== 配置区域 ====================
-const LLM_API_KEY = process.env.LLM_API_KEY;
-// LLM配置：默认用商汤日日新SenseNova（OpenAI兼容），也可换成其他OpenAI兼容API
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID，可改成别的UP主
 const DATA_PATH = path.resolve('public/data/videos.json');
 
@@ -76,6 +73,10 @@ async function main() {
 
 // ==================== 自动检测新视频 ====================
 async function checkAndProcessNewVideos() {
+  // 先做 LLM 连通性自检，避免白白跑完下载+语音转录才发现请求打不通
+  console.log('正在进行 LLM 连通性自检...');
+  await checkLLMHealth();
+
   console.log('正在检测新视频（通过 yt-dlp）...');
 
   // 用 yt-dlp 获取UP主视频列表
@@ -380,9 +381,7 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   })();
 
   console.log('测试AI分析...');
-  console.log('API URL:', LLM_BASE_URL);
-  console.log('Model:', LLM_MODEL);
-  console.log('Key前10位:', LLM_API_KEY?.slice(0, 10));
+  printLLMConfig();
 
   const prompt = `你的角色定位是文字内容精确解析员，前提摘要：我发给你的文字内容是李大霄的视频内容，需要你根据文字内容解析出他深层表达的意思，请注意，李大霄在抖音有百万粉丝，他不能明面唱空，不能明面直接给出投资建议。你要挖掘他想表达的真正意思，请将以下视频转录文本分析并输出为指定格式的 JSON:
 
@@ -450,48 +449,22 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   ${text}`;
 
   try {
-    const response = await postWithRetry(
-      `${LLM_BASE_URL}/chat/completions`,
+    const result = await chatJSON(
+      "你是一个严格遵循指令的文本解析专家，必须输出完整、详细、不省略任何字段的JSON。",
+      prompt,
       {
-        model: LLM_MODEL,
-        messages: [
-          { role: "system", content: "你是一个严格遵循指令的文本解析专家，必须输出完整、详细、不省略任何字段的JSON。" },
-          { role: "user", content: prompt }
-        ],
         temperature: 0.2,
-        max_tokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
-        response_format: { type: "json_object" }   // 可以保留
-      },
-      {
-        headers: { 'Authorization': `Bearer ${LLM_API_KEY}` },
+        maxTokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
         timeout: 3000000
       }
     );
 
     console.log('\n✅ AI分析成功！');
-    console.log(response.data.choices[0].message.content);
-    return JSON.parse(response.data.choices[0].message.content);
+    console.log(JSON.stringify(result, null, 2).slice(0, 1000));
+    return result;
   } catch (error) {
-    console.error('\n❌ AI分析失败:', error);
-    if (error.code) console.error('错误码:', error.code);
-  }
-}
-
-// ==================== LLM 请求（带429限流重试）====================
-// 免费模型有TPM/RPM限流，命中429时按退避等待后重试
-async function postWithRetry(url, body, config, maxRetries = 4) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await axios.post(url, body, config);
-    } catch (error) {
-      const status = error.response?.status;
-      const code = error.response?.data?.error?.code;
-      const rateLimited = status === 429 || code === '429003';
-      if (!rateLimited || attempt === maxRetries) throw error;
-      const waitSec = attempt * 30;
-      console.log(`⚠️ 命中限流(429)，等待${waitSec}秒后第${attempt}次重试...`);
-      await sleep(waitSec * 1000);
-    }
+    console.error('\n❌ AI分析失败:', error.message);
+    return null;
   }
 }
 

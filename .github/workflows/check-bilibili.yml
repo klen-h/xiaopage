@@ -52,12 +52,21 @@ jobs:
           restore-keys: |
             whisper-model-base-
 
+      - name: LLM 连通性诊断
+        env:
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_FALLBACK_MODELS: ${{ secrets.LLM_FALLBACK_MODELS }}
+        run: node scripts/check-llm.js
+
       - name: 检查新视频并分析
         env:
           BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_FALLBACK_MODELS: ${{ secrets.LLM_FALLBACK_MODELS }}
           BILI_UID: ${{ secrets.BILI_UID }}
           WECHAT_WEBHOOK: ${{ secrets.WECHAT_WEBHOOK }}
         run: node scripts/analyze-video.js --check-new

@@ -7,7 +7,9 @@
     "dev": "vite --host",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && cloudbase deploy"
+    "deploy": "npm run build && cloudbase deploy",
+    "check-llm": "node scripts/check-llm.js",
+    "test-ai": "node scripts/test-ai.js"
   },
   "dependencies": {
     "@cloudbase/js-sdk": "^2.27.2",

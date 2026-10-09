@@ -11,10 +11,6 @@ import 'dotenv/config';
 // ==================== 配置区域 ====================
 const JIN10_COOKIE = process.env.JIN10_COOKIE || '';
 const WECHAT_WEBHOOK = process.env.WECHAT_WEBHOOK || '';
-const LLM_API_KEY = process.env.LLM_API_KEY;
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
-
 const DATA_DIR = path.resolve('public/data');
 const STATE_PATH = path.join(DATA_DIR, 'jin10_state.json');
 const RAW_PATH = path.join(DATA_DIR, 'jin10_flash.json');
@@ -22,6 +18,7 @@ const ANALYSIS_PATH = path.join(DATA_DIR, 'jin10_analysis.json');
 
 import { HOLDINGSTEXT } from './const/index.js';
 import { getMarketData } from './data-layer.js';
+import { chatJSON, printLLMConfig } from './utils/llm.js';
 
 // ==================== 过滤规则 ====================
 const EXCLUDE_PATTERNS = [
@@ -118,23 +115,6 @@ const EVENT_CLUSTERS = [
 ];
 
 // ==================== 主入口 ====================
-// 带限流重试的LLM请求：免费模型有TPM/RPM限制，命中429时退避重试
-async function postWithRetry(url, body, config, maxRetries = 4) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await axios.post(url, body, config);
-    } catch (error) {
-      const status = error.response?.status;
-      const code = error.response?.data?.error?.code;
-      const rateLimited = status === 429 || code === '429003';
-      if (!rateLimited || attempt === maxRetries) throw error;
-      const waitSec = attempt * 30;
-      console.log(`⚠️ 命中限流(429)，等待${waitSec}秒后第${attempt}次重试...`);
-      await sleep(waitSec * 1000);
-    }
-  }
-}
-
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -536,27 +516,13 @@ ${flashText}
    }
  }`;
 
+  printLLMConfig();
   try {
-    const response = await postWithRetry(
-      `${LLM_BASE_URL}/chat/completions`,
-      {
-        model: LLM_MODEL,
-        messages: [
-          { role: "system", content: "你是冷酷的原油宏观交易员。当前一切以油价为核心。对无价值信息要毫不留情。必须输出合法JSON。" },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.1,
-        max_tokens: 16384,  // 思考模型的思考token也计入max_tokens，需留足余量
-        response_format: { type: "json_object" }
-      },
-      {
-        headers: { 'Authorization': `Bearer ${LLM_API_KEY}` },
-        timeout: 600000
-      }
+    const parsed = await chatJSON(
+      "你是冷酷的原油宏观交易员。当前一切以油价为核心。对无价值信息要毫不留情。必须输出合法JSON。",
+      prompt,
+      { temperature: 0.1, maxTokens: 16384, timeout: 600000 }
     );
-
-    const content = response.data.choices[0].message.content;
-    const parsed = JSON.parse(content);
 
     console.log('✅ LLM 分析完成');
     console.log(`   情绪: ${parsed.market_mood} | 噪音: ${parsed.noise_level}% | 原油: ${parsed.oil_outlook || '无'}`);

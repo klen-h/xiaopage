@@ -1,18 +1,16 @@
-import axios from 'axios';
 import 'dotenv/config';
+import { chatJSON, printLLMConfig } from './utils/llm.js';
 
-const LLM_API_KEY = process.env.LLM_API_KEY;
-const LLM_BASE_URL = process.env.LLM_BASE_URL || 'https://token.sensenova.cn/v1';
-const LLM_MODEL = process.env.LLM_MODEL || 'deepseek-v4-pro';
+// 可指定模型: node scripts/test-ai.js deepseek-v4-flash
+const TEST_MODEL = process.argv[2] || process.env.LLM_MODEL || 'deepseek-v4-flash';
 
 // 获取当前时间：YYYY-MM-DD HH:MM
 const now = new Date();
 const date = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()} ${now.getHours()}:${now.getMinutes()}`;
 
 console.log('测试AI分析...');
-console.log('API URL:', LLM_BASE_URL);
-console.log('Model:', LLM_MODEL);
-console.log('Key前10位:', LLM_API_KEY?.slice(0, 10));
+console.log('Model:', TEST_MODEL);
+printLLMConfig();
 
 const testText = `各位好，各位好！今天继续地反弹。十二点二十一分，日本怒涨零点七二，韩国更是不得了，三点零六。印度涨百分之一点三八，新加坡涨百分之零点四二。关键看油，一切看油！布油九十五，纽约原油九十，掉得还是比较多的。上海油呃六三四，掉二点七二。关键是，关键是美元对离岸人民币六点八一五六，盘中一度创六点八零八四八，这算好了吗？这么好听。勇创三年来的人民币的新高，还是蛮强的。港股上午盘是怒涨啦，继续反弹。我从三月二十三号认为啊港股的一个低位，短期低位了，这个跟一四五九七没办法比。呃，二四两三点这个地方展开了反弹。恒科呢，也在二零二六年三月三十日四六一九点，当然这个跟那个大底没法比了啊，大底是在二零二二年的十月二十五日二七二零点，两千七，这个地方四千六百一十九，那还是不一样的。当然它是调整了百分之三十一之后的这个反弹，还是可能会靠谱一些的。这是恒科的情况，怒涨百分之一点四六。今天，我觉得整个全球股市现在是美股又回到了高位，欧洲市场也不断地在创新高，日、韩、印也回到了一些高位。特别是日本、韩国，这个涨得一发不可收拾了，也接近创新高了。但是从这一次的整个全球市场，多个市场处于一个高位区这样的一个客观事实来看，因为什么情况，我对高还是比较谨慎的。比如说前几年，五六年前，大概是二零二零年左右，一大帮人在那里吹负利率。那个时候全球的债券市场都是零，接近零。过了五六年，那批吹捧负利率的人，而且都是赫赫有名的人。去了哪里呢？因为现在都跑到四以上了，或者四左右了。那全球的养老金在那个地方腰斩，刚刚过去不久啊，它每隔一段时间都会有一个泡沫出现。债券市场我们当然讲的是国外的美债、欧债、日债了。那最近又出来一个贵金属的巨震，有色金属的巨震，油的巨震。我觉得这里面有没有泡沫存在，我们还是可以研究的那股票市场遇到高位，当
 
@@ -83,27 +81,15 @@ const prompt = `你的角色定位是文字内容精确解析员，前提摘要�
 ${testText}`;
 
 try {
-  const response = await axios.post(
-    `${LLM_BASE_URL}/chat/completions`,
-    {
-      model: LLM_MODEL,
-      messages: [
-        { role: "system", content: "你是一个严格遵循指令的文本解析专家，必须输出完整、详细、不省略任何字段的JSON。" },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.2,
-      max_tokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
-      response_format: { type: "json_object" }   // 可以保留
-    },
-    {
-      headers: { 'Authorization': `Bearer ${LLM_API_KEY}` },
-      timeout: 3000000
-    }
+  const result = await chatJSON(
+    "你是一个严格遵循指令的文本解析专家，必须输出完整、详细、不省略任何字段的JSON。",
+    prompt,
+    { model: TEST_MODEL, temperature: 0.2, maxTokens: 32768, timeout: 3000000 }
   );
 
   console.log('\n✅ AI分析成功！');
-  console.log(response.data.choices[0].message.content);
+  console.log(JSON.stringify(result, null, 2));
 } catch (error) {
-  console.error('\n❌ AI分析失败:', error);
-  if (error.code) console.error('错误码:', error.code);
+  console.error('\n❌ AI分析失败:', error.message);
+  process.exit(1);
 }
