@@ -692,6 +692,124 @@ async function pushWechat(title, bvid, operationAdvice) {
 }
 
 
+// ==================== 音频下载 ====================
+// B站风控（HTTP 412）会拦掉 yt-dlp 的取流请求，这里做两级下载：
+// 1) yt-dlp 取最小音频流（体积小、速度快）
+// 2) 失败时改用 B站官方 playurl 接口拿直链自己下载（实测该接口对同样的 Cookie 更宽松）
+
+const BILI_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+function biliHeaders(videoUrl) {
+  return {
+    'User-Agent': BILI_UA,
+    'Referer': videoUrl || 'https://www.bilibili.com',
+    'Cookie': extractBrowserCookies()
+  };
+}
+
+/** 打印 execSync 失败的真实原因（stdout/stderr），否则日志里只剩一堆命令行参数 */
+function logExecError(prefix, error) {
+  const stderr = String(error?.stderr || '').trim();
+  const stdout = String(error?.stdout || '').trim();
+  if (error?.killed || error?.signal === 'SIGTERM') {
+    console.error(`${prefix} 命令超时被终止`);
+  }
+  if (stderr) console.error(`${prefix} stderr:\n${stderr.slice(-1500)}`);
+  else if (stdout) console.error(`${prefix} stdout:\n${stdout.slice(-800)}`);
+  else console.error(`${prefix} ${error?.message?.slice(0, 300)}`);
+}
+
+/** 方式1：yt-dlp 下载最佳音频流，返回文件路径或 null */
+function downloadAudioWithYtDlp(videoUrl, basePath, timeout) {
+  const cmd = `yt-dlp ${YT_DLP_COOKIE_ARGS} -f "ba/b" --no-playlist --retries 5 --fragment-retries 5 --no-warnings -o "${basePath}.%(ext)s" "${videoUrl}"`;
+  try {
+    execSync(cmd, { encoding: 'utf-8', timeout, stdio: 'pipe' });
+  } catch (error) {
+    console.warn('⚠️ yt-dlp 下载音频失败');
+    logExecError('yt-dlp', error);
+    return null;
+  }
+  const files = fs.readdirSync(path.dirname(basePath));
+  const hit = files.find(f => f.startsWith(path.basename(basePath)));
+  return hit ? path.join(path.dirname(basePath), hit) : null;
+}
+
+/** 方式2：走 B站官方 playurl 接口拿直链，自己下载（yt-dlp 被 412 拦截时的兜底） */
+async function downloadAudioViaBiliApi(videoUrl, basePath, timeout = 300000) {
+  const bvid = videoUrl.match(/BV\w+/)?.[0];
+  if (!bvid) return null;
+
+  const headers = biliHeaders(videoUrl);
+  try {
+    const viewRes = await axios.get(`https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`, { headers, timeout: 15000 });
+    const cid = viewRes.data?.data?.cid || viewRes.data?.data?.pages?.[0]?.cid;
+    if (!cid) {
+      console.warn('⚠️ 官方接口兜底失败：拿不到 cid');
+      return null;
+    }
+
+    const playRes = await axios.get('https://api.bilibili.com/x/player/playurl', {
+      params: { bvid, cid, fnval: 16, fnver: 0, fourk: 1, qn: 16, platform: 'pc' },
+      headers,
+      timeout: 20000
+    });
+
+    if (playRes.data?.code !== 0) {
+      console.warn('⚠️ 官方接口兜底失败:', playRes.data?.code, playRes.data?.message);
+      return null;
+    }
+
+    const data = playRes.data?.data || {};
+    const dashAudio = (data.dash?.audio || []).sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0];
+    // dash 音频优先；没有则退回 durl（音视频混合流，qn=16 时体积也很小）
+    const media = dashAudio ? { url: dashAudio.baseUrl, ext: 'm4a' } : (data.durl?.[0]?.url ? { url: data.durl[0].url, ext: 'mp4' } : null);
+
+    if (!media) {
+      console.warn('⚠️ 官方接口兜底失败：没有可取流地址');
+      return null;
+    }
+
+    const ext = media.url.includes('.flv') ? 'flv' : media.ext;
+    const filePath = `${basePath}.${ext}`;
+    console.log(`正在通过官方接口下载音频（${dashAudio ? 'dash' : 'durl'}）...`);
+
+    const res = await axios.get(media.url, {
+      headers,                    // 直链 CDN 同样需要 Cookie + Referer
+      responseType: 'stream',
+      timeout,
+      maxRedirects: 5,
+      validateStatus: s => s < 400
+    });
+
+    const contentType = String(res.headers['content-type'] || '');
+    if (contentType.includes('mpegurl') || contentType.includes('m3u8') || contentType.startsWith('text/')) {
+      console.warn(`⚠️ 官方接口兜底失败：返回的不是媒体文件（${contentType}）`);
+      res.data.destroy?.();
+      return null;
+    }
+
+    await new Promise((resolve, reject) => {
+      const ws = fs.createWriteStream(filePath);
+      res.data.pipe(ws);
+      ws.on('finish', resolve);
+      ws.on('error', reject);
+      res.data.on('error', reject);
+    });
+
+    const size = fs.statSync(filePath).size;
+    if (size < 10000) {
+      console.warn(`⚠️ 官方接口兜底失败：文件过小(${size} bytes)`);
+      try { fs.unlinkSync(filePath); } catch {}
+      return null;
+    }
+    console.log(`✅ 官方接口下载成功（${(size / 1048576).toFixed(1)} MB）`);
+    return filePath;
+  } catch (error) {
+    console.warn('⚠️ 官方接口兜底失败:', error.response?.status || error.message, JSON.stringify(error.response?.data)?.slice(0, 200));
+    return null;
+  }
+}
+
 /**
  * 下载音频并调用本地 faster-whisper 识别
  * @param {string} videoUrl
@@ -703,64 +821,64 @@ async function downloadAudioAndTranscribe(videoUrl, durationSec = 0) {
 
   const estSec = durationSec || 600;
   // 长视频下载/识别都更慢，动态放宽超时上限
-  const downloadTimeout = Math.max(180000, Math.ceil(estSec / 3) * 1000);
+  const downloadTimeout = Math.max(300000, Math.ceil(estSec / 3) * 1000);
   const asrTimeout = Math.max(600000, Math.ceil(estSec * 0.7) * 1000);
-  
-  // 用 m4a 格式，不需要 ffmpeg 转码
+
   const basePath = path.join(tempDir, `audio_${Date.now()}`);
-  
+  let audioPath = null;
+
   try {
     console.log('正在下载音频...');
-    
-    // 下载最佳音频流（B站通常是 m4a/aac）
-    const cmd = `yt-dlp ${YT_DLP_COOKIE_ARGS} -f "ba" --no-playlist -o "${basePath}.%(ext)s" "${videoUrl}"`;
-    execSync(cmd, { encoding: 'utf-8', timeout: downloadTimeout, stdio: 'pipe' });
-    
-    // 找到实际下载的文件
-    const files = fs.readdirSync(tempDir);
-    const audioFile = files.find(f => f.startsWith(path.basename(basePath)));
-    if (!audioFile) throw new Error('音频下载失败');
-    
-    const audioPath = path.join(tempDir, audioFile);
+    audioPath = downloadAudioWithYtDlp(videoUrl, basePath, downloadTimeout);
+    if (!audioPath) {
+      console.log('↪️ 改用 B站官方接口下载...');
+      audioPath = await downloadAudioViaBiliApi(videoUrl, basePath, downloadTimeout);
+    }
+    if (!audioPath) throw new Error('音频下载失败（yt-dlp 与官方接口均失败）');
+
     console.log(`音频已下载: ${audioPath}`);
-    
+
     // 调用 Python 脚本识别
     console.log(`正在使用 faster-whisper(${WHISPER_MODEL}) 识别（最长等待 ${Math.round(asrTimeout / 60000)} 分钟）...`);
     const scriptPath = path.resolve('scripts', 'transcribe.py');
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    const output = execSync(
-      `${pythonCmd} "${scriptPath}" "${audioPath}" "${WHISPER_MODEL}"`,
-      { 
-        encoding: 'utf-8', 
-        timeout: asrTimeout,
-        stdio: 'pipe',
-        env: { ...process.env, PYTHONUNBUFFERED: '1' }
-      }
-    );
-    
+    let output;
+    try {
+      output = execSync(
+        `${pythonCmd} "${scriptPath}" "${audioPath}" "${WHISPER_MODEL}"`,
+        {
+          encoding: 'utf-8',
+          timeout: asrTimeout,
+          stdio: 'pipe',
+          env: { ...process.env, PYTHONUNBUFFERED: '1' }
+        }
+      );
+    } catch (error) {
+      console.error('❌ faster-whisper 识别失败:');
+      logExecError('faster-whisper', error);
+      return null;
+    }
+
     const result = JSON.parse(output.trim());
-    
-    // 清理音频文件
-    try { fs.unlinkSync(audioPath); } catch {}
-    
     if (result.text && result.text.length > 20) {
       console.log(`✅ faster-whisper 识别成功（${result.text.length} 字）`);
       return result.text;
     }
-    
+
     console.log('⚠️ 识别结果过短');
     return null;
-    
+
   } catch (error) {
-    console.error('❌ faster-whisper 识别失败:', error.message?.slice(0, 200));
-    // 清理
+    console.error('❌ 音频处理失败:', error.message?.slice(0, 300));
+    return null;
+  } finally {
+    // 清理临时音频
     try {
       const files = fs.readdirSync(tempDir);
       files.filter(f => f.startsWith(path.basename(basePath))).forEach(f => {
-        fs.unlinkSync(path.join(tempDir, f));
+        try { fs.unlinkSync(path.join(tempDir, f)); } catch {}
       });
     } catch {}
-    return null;
   }
 }
 

@@ -87,6 +87,8 @@ npm run check-llm
 
 常见错误：
 
+- **HTTP 412 `Precondition Failed`（yt-dlp 取流被 B站风控拦截）**：日志里会出现 `⚠️ yt-dlp 下载音频失败` + `↪️ 改用 B站官方接口下载`，脚本会自动走 `api.bilibili.com/x/player/playurl` 直链下载（同样用 `BILI_COOKIE`）作为兜底，无需人工处理。若两级都失败，通常是 `BILI_COOKIE` 过期，重新导出 Cookie 更新 Secret 即可。
+
 - **HTTP 404 `model is not found`**：中转站模型已下线/改名。跑 `npm run check-llm`，把 `LLM_MODEL` 改成列表中的名字即可；脚本本身也会自动切换到可用模型继续跑。
 - **HTTP 401 / 403**：`LLM_API_KEY` 过期或余额不足，不会重试，直接报错。
 - **HTTP 429**：脚本按 30s / 60s / 90s 退避自动重试。
