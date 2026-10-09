@@ -26,15 +26,22 @@ const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID（主UP�
 const DATA_PATH = path.resolve('public/data/videos.json');
 
 // 额外解读的UP主：只做文字解读 + 企微推送，不写入 videos.json
-// 格式：EXTRA_UPS="1039025435,123456"
-const EXTRA_UPS = (process.env.EXTRA_UPS || '1039025435')
+// 格式：EXTRA_UPS="1039025435,584685158"（可用 Secret 覆盖）
+const EXTRA_UPS = (process.env.EXTRA_UPS || '1039025435,584685158,520819684,290548469')
   .split(',')
   .map(s => s.trim())
   .filter(Boolean);
 
 // 额外UP主的显示名（企微推送用），未配置则显示 UID
 const EXTRA_UP_NAMES = {
-  '1039025435': '战国时代_姜汁汽水'
+  '1039025435': '战国时代_姜汁汽水',  // 地缘 + 财经，长视频
+  '584685158': '正解局',             // 产业 / 城市 / 宏观，高频
+  '520819684': '小Lin说',            // 国际宏观，深度，更新慢
+  '290548469': '冲浪普拉斯',          // 公司财报 / 商业模式
+  '485083371': '烈火眼镜',           // 盘面趋势（基金从业资质），备用
+  '20763555': '银行螺丝钉',           // 指数估值 / 定投，备用
+  '508709785': '温义飞今天插旗了吗',   // 财经评论，备用
+  '322005137': '史诗级韭菜'           // 经济分析 / 投资框架，备用
 };
 
 // 额外UP主视频时长上限（秒）。地缘/财经类视频通常较长，默认 120 分钟
@@ -131,6 +138,11 @@ async function main() {
           await pushWechatPlain(path.basename(file), process.argv[pushIdx + 1] || '', result, target);
         }
       }
+    } else if (mode === '--list-targets') {
+      // 查看当前会跑哪些 UP 主：node scripts/analyze-video.js --list-targets
+      TARGETS.forEach(t => {
+        console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟  每次最多=${t.maxPerRun}个`);
+      });
     } else if (mode?.includes('bilibili.com')) {
       // 加 --text 可手动测试文字解读模式：node scripts/analyze-video.js <链接> --text
       const asText = process.argv[3] === '--text';
