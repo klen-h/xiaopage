@@ -60,6 +60,8 @@ node scripts/analyze-video.js "https://www.bilibili.com/video/BV1xxxxxx"
 | `EXTRA_UP_MAX_PER_RUN` | 每次运行最多处理几个额外 UP 主视频，默认 1（定时器每 30 分钟一次，足够及时） |
 | `EXTRA_WECHAT_WEBHOOK` | 可选，额外 UP 主推送到另一个企微群；不配则与李大霄同一个群 |
 | `TRANSCRIPT_MAX_CHARS` | 单条转录送给 LLM 的字符上限，默认 80000，超长按头 60% + 尾 40% 截取 |
+| `ONLY_LATEST` | 默认只处理每个 UP 的**最新一条**视频，不补推历史（设 `0` 恢复逐条补历史） |
+| `EXTRA_UP_MAX_AGE_HOURS` | 文字解读模式只推送 N 小时内发布的视频，默认 168（7 天），`0` 为不限 |
 | `WHISPER_MODEL` | 可选，faster-whisper 模型大小（base/small/medium），默认 base；换模型后记得同步更新 workflow 里的 `whisper-model-base-` 缓存 key |
 
 说明：
@@ -89,6 +91,9 @@ node scripts/analyze-video.js --text-from-file temp/transcript.txt --push BV1xxx
 | `LLM_FALLBACK_MODELS` | 选填，逗号分隔的显式备选模型 |
 | `LLM_AUTO_FALLBACK` | 设为 `0` 可关闭「模型失效自动切换」 |
 | `LLM_NO_JSON_FORMAT` | 设为 `1` 时不发送 `response_format`（部分模型不支持） |
+| `LLM_MAX_RETRIES` | 单个模型的最大重试次数，默认 5 |
+| `LLM_MIN_INTERVAL_MS` | 两次 LLM 调用之间的最小间隔，默认 8000ms，用于规避 TPM/RPM 限流 |
+| `LLM_JSON_MAX_TOKENS` | 李大霄 JSON 分析的 max_tokens，默认 16384 |
 
 诊断命令（会列出当前厂商可用模型、并做一次真实请求）：
 
@@ -102,7 +107,8 @@ npm run check-llm
 
 - **HTTP 404 `model is not found`**：中转站模型已下线/改名。跑 `npm run check-llm`，把 `LLM_MODEL` 改成列表中的名字即可；脚本本身也会自动切换到可用模型继续跑。
 - **HTTP 401 / 403**：`LLM_API_KEY` 过期或余额不足，不会重试，直接报错。
-- **HTTP 429**：脚本按 30s / 60s / 90s 退避自动重试。
+- **HTTP 429（限流）**：脚本按 30s/60s/120s/240s/300s 指数退避重试（优先用服务端 `Retry-After`），单个模型重试用尽后自动切换到其他候选模型；同时每次调用之间至少间隔 `LLM_MIN_INTERVAL_MS`（默认 8s）。若仍频繁 429，说明免费额度 TPM/RPM 不够，可调大间隔、降低 `LLM_JSON_MAX_TOKENS`，或升级套餐。
+- **每个 UP 只处理最新一条视频**：默认开启（`ONLY_LATEST=1`），新加入的 UP 主不会把历史视频一条条推出来；文字解读还会跳过 7 天前的旧视频（`EXTRA_UP_MAX_AGE_HOURS`）。
 
 ## 手动更新（回退方案）
 

@@ -104,12 +104,34 @@ function isAuthError(info) {
   return info.status === 401 || info.status === 403;
 }
 
+function isRateLimited(info) {
+  return info.status === 429 || String(info.code || '').includes('429');
+}
+
 function isRetryable(info, error) {
   if (isAuthError(info)) return false;
-  if (info.status === 429 || String(info.code || '').includes('429')) return true;
+  if (isRateLimited(info)) return true;
   if (info.status >= 500) return true;
   if (!error?.response) return true; // 网络错误 / 超时
   return false;
+}
+
+/** 计算退避秒数：优先用服务端 Retry-After，否则指数退避（30s → … → 上限 300s） */
+function backoffSeconds(error, attempt) {
+  const retryAfter = Number(error?.response?.headers?.['retry-after']);
+  if (Number.isFinite(retryAfter) && retryAfter > 0) return Math.min(retryAfter, 600);
+  const ms = Number(error?.response?.headers?.['x-ratelimit-reset-ms']);
+  if (Number.isFinite(ms) && ms > 0) return Math.min(Math.ceil(ms / 1000), 600);
+  return Math.min(30 * 2 ** (attempt - 1), 300);
+}
+
+// 全局最小请求间隔：中转免费额度是 TPM/RPM 限制，避免一轮里 5 个视频连环调用触发 429
+const MIN_INTERVAL_MS = Number(process.env.LLM_MIN_INTERVAL_MS || 8000);
+let lastCallStart = 0;
+async function respectMinInterval() {
+  const waitMs = lastCallStart + MIN_INTERVAL_MS - Date.now();
+  if (waitMs > 0) await sleep(waitMs);
+  lastCallStart = Date.now();
 }
 
 /**
@@ -135,7 +157,7 @@ export async function chat(messages, options = {}) {
     maxTokens = 16384,
     jsonMode = false,
     timeout = 600000,
-    maxRetries = 3
+    maxRetries = Number(process.env.LLM_MAX_RETRIES || 5)
   } = options;
 
   if (!LLM_API_KEY) {
@@ -161,6 +183,7 @@ export async function chat(messages, options = {}) {
       if (jsonMode && !NO_JSON_FORMAT) body.response_format = { type: 'json_object' };
 
       try {
+        await respectMinInterval();
         const res = await axios.post(CHAT_URL, body, authConfig(timeout));
         return res.data;
       } catch (error) {
@@ -185,8 +208,20 @@ export async function chat(messages, options = {}) {
           break; // 换下一个候选模型
         }
 
+        // 限流：退避重试；本模型重试用尽后换下一个候选模型（不同模型额度通常独立）
+        if (isRateLimited(info)) {
+          if (attempt < maxRetries) {
+            const waitSec = backoffSeconds(error, attempt);
+            console.warn(`⚠️ LLM 限流(429)，${waitSec}秒后第${attempt + 1}/${maxRetries}次重试...`);
+            await sleep(waitSec * 1000);
+            continue;
+          }
+          console.warn(`⚠️ 模型 ${model} 持续限流(429)，切换到其他模型`);
+          break;
+        }
+
         if (isRetryable(info, error) && attempt < maxRetries) {
-          const waitSec = attempt * 30;
+          const waitSec = backoffSeconds(error, attempt);
           console.warn(`⚠️ LLM 请求失败(HTTP ${info.status || 'network'})，${waitSec}秒后第${attempt + 1}次重试...`);
           await sleep(waitSec * 1000);
           continue;
@@ -206,10 +241,15 @@ export async function chat(messages, options = {}) {
   } catch {
     hint = '\n无法获取 /models 列表，BASE_URL 可能已失效';
   }
+  const reason = isRateLimited(info)
+    ? '\n原因：所有候选模型都命中 429 限流（通常是免费额度的 TPM/RPM 用尽）。\n' +
+      '可尝试：1) 调大 LLM_MIN_INTERVAL_MS（默认 8000ms）降低调用频率；2) 精简单次请求（降低 max_tokens）；3) 升级套餐或换可用的模型/中转。'
+    : '\n请检查：1) LLM_BASE_URL 是否为该厂商正确的 OpenAI 兼容地址（通常以 /v1 结尾）；2) LLM_MODEL 是否已下线/改名；3) 中转配额是否过期。';
+
   throw new Error(
     `所有候选模型均不可用（${models.join(', ')}）。\n` +
     `最后错误：HTTP ${info.status ?? 'network'} ${info.message || info.body}` +
-    `\n请检查：1) LLM_BASE_URL 是否为该厂商正确的 OpenAI 兼容地址（通常以 /v1 结尾）；2) LLM_MODEL 是否已下线/改名；3) 中转配额是否过期。${hint}`
+    reason + hint
   );
 }
 

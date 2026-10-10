@@ -54,6 +54,12 @@ const TRANSCRIPT_MAX_CHARS = Number(process.env.TRANSCRIPT_MAX_CHARS || 80000);
 // faster-whisper 模型大小：base 最省时间，长视频可换 small / medium 提升准确率
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'base';
 
+// 只处理最新一条视频（ONLY_LATEST=0 可恢复“按列表逐条补历史”的旧行为）
+const ONLY_LATEST = process.env.ONLY_LATEST !== '0';
+// 文字解读模式：只推送发布时间在 N 小时以内的视频（0 = 不限制）。
+// 防止刚添加的 UP 主把很久以前的最新视频当成“新视频”推出来。
+const EXTRA_UP_MAX_AGE_HOURS = Number(process.env.EXTRA_UP_MAX_AGE_HOURS || 168);
+
 const TARGETS = [
   {
     uid: BILI_UID,
@@ -61,6 +67,8 @@ const TARGETS = [
     mode: 'json',           // 生成结构化 JSON 并写入 public/data/videos.json
     maxDuration: Number(process.env.BILI_MAX_DURATION || 900),
     maxPerRun: 5,
+    onlyLatest: ONLY_LATEST,
+    maxAgeHours: 0,         // 归档模式不做“新鲜度”过滤，避免漏掉视频
     statePath: null         // 去重依赖 videos.json 中的 bvid
   },
   ...EXTRA_UPS.map(uid => ({
@@ -69,6 +77,8 @@ const TARGETS = [
     mode: 'text',           // 只生成文字解读，推送企微
     maxDuration: EXTRA_UP_MAX_DURATION,
     maxPerRun: EXTRA_UP_MAX_PER_RUN,
+    onlyLatest: ONLY_LATEST,
+    maxAgeHours: EXTRA_UP_MAX_AGE_HOURS,
     statePath: path.resolve('public/data', `up_${uid}_state.json`),
     // 可选：额外UP主单独推送到另一个企微群（不配则用主 WECHAT_WEBHOOK）
     webhook: process.env.EXTRA_WECHAT_WEBHOOK || ''
@@ -141,7 +151,7 @@ async function main() {
     } else if (mode === '--list-targets') {
       // 查看当前会跑哪些 UP 主：node scripts/analyze-video.js --list-targets
       TARGETS.forEach(t => {
-        console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟  每次最多=${t.maxPerRun}个`);
+        console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟  只处理最新=${t.onlyLatest ? '是' : '否'}  新鲜度=${t.maxAgeHours > 0 ? Math.round(t.maxAgeHours / 24) + '天' : '不限'}`);
       });
     } else if (mode?.includes('bilibili.com')) {
       // 加 --text 可手动测试文字解读模式：node scripts/analyze-video.js <链接> --text
@@ -231,14 +241,35 @@ async function checkAndProcessNewVideos(target) {
 
   console.log(`获取到 ${videos.length} 个视频`);
 
+  // 只处理最新一条：不追历史视频（旧视频不会被逐条补推）
+  let candidates = videos;
+  if (target.onlyLatest) {
+    candidates = videos.slice(0, 1);
+    if (videos.length > 1) {
+      console.log(`只检查最新视频，忽略更早的 ${videos.length - 1} 个`);
+    }
+  }
+
   // 读取已处理的视频BV号
   const processedBVs = readProcessedBVs(target);
 
   let processedCount = 0;
-  for (const video of videos) {
+  for (const video of candidates) {
     if (processedBVs.includes(video.bvid)) {
       console.log(`跳过已处理: ${video.bvid}`);
       continue;
+    }
+
+    // 新鲜度过滤：太久以前发布的视频视为历史内容，不推送
+    if (target.maxAgeHours > 0 && video.date) {
+      const publishedAt = new Date(video.date.replace(' ', 'T') + ':00+08:00').getTime();
+      if (Number.isFinite(publishedAt)) {
+        const ageHours = (Date.now() - publishedAt) / 3600000;
+        if (ageHours > target.maxAgeHours) {
+          console.log(`跳过历史视频(发布于${Math.round(ageHours / 24)}天前，超过${Math.round(target.maxAgeHours / 24)}天): ${video.bvid}`);
+          continue;
+        }
+      }
     }
 
     if (processedCount >= target.maxPerRun) {
@@ -594,7 +625,7 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
       prompt,
       {
         temperature: 0.2,
-        maxTokens: 32768,  // 思考模型的思考token也计入max_tokens，需留足余量
+        maxTokens: Number(process.env.LLM_JSON_MAX_TOKENS || 16384),  // 思考token也计入，但不再预留 32k，降低 TPM 限流概率
         timeout: 3000000
       }
     );
