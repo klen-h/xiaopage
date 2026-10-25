@@ -79,6 +79,24 @@ node scripts/analyze-video.js --text-from-file temp/transcript.txt
 node scripts/analyze-video.js --text-from-file temp/transcript.txt --push BV1xxxxxxxx
 ```
 
+## 推送到 stock-scoring 工作台（李大霄视角卡）
+
+2026-10-25 起接入：LLM 输出解读的**时刻**，`analyze-video.js` 会实时 POST 回调
+stock-scoring-v2 后端（事件驱动，不是等对方轮询）。要点：
+
+- **payload 直接带内容**（新解读 + 前 2 条）：本脚本跑在 Actions runner 内，此刻
+  `public/data/videos.json` 还没 commit 回 GitHub，对方回拉 raw 必拿旧数据；
+  带「前两条」是为了自愈——偶发推送失败时，下一条视频的推送会顺带补上。
+- **fail-soft**：推送失败只 `[scoring-push] failed` 警告，不阻断写文件/企微推送。
+- 环境变量（GitHub Secrets，本地 .env 同名）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `SCORING_PUSH_URL` | 对方后端 `https://<render>/api/market/lidaxiao/push`；不配置 = 静默关闭 |
+| `SCORING_PUSH_TOKEN` | 共享密钥，与对方 Render env `LIDX_PUSH_TOKEN` 配同一个值 |
+
+- 对方侧的接收/归一/卡片见其仓库 `backend/app/lidaxiao_views.py` 模块头（含"不进决策链"预登记声明）。
+
 ## LLM 配置与故障排查
 
 统一由 `scripts/utils/llm.js` 负责调用（OpenAI 兼容接口），相关环境变量：

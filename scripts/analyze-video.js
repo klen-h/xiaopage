@@ -326,6 +326,32 @@ function readProcessedState(statePath) {
   }
 }
 
+// ==================== 推送到 stock-scoring 工作台（李大霄视角卡） ====================
+// ★ 2026-10-25：在 LLM 输出解读的**时刻**实时回调 stock-scoring-v2 后端（事件驱动，
+//   与其 /system/batch-done 模式同源）。为什么 payload 直接带内容而不是"通知后回拉"：
+//   本脚本运行在 Actions runner 内，此刻 videos.json 还没 commit 回 GitHub，
+//   对方回拉 raw 必然拿到旧数据。带「前两条」是为了自愈——偶发推送失败
+//   （网络抖动/对方重启）时，下一条视频的推送会顺带补上漏掉的那条。
+//   fail-soft：推送失败只 warn，绝不阻断本地主流程（写文件/企微推送照常）。
+//   未配置 SCORING_PUSH_URL 时静默关闭（本地开发不受影响）。
+async function notifyScoring(entries) {
+  const url = process.env.SCORING_PUSH_URL;
+  if (!url || !Array.isArray(entries) || entries.length === 0) return;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Lidx-Token': process.env.SCORING_PUSH_TOKEN || '',
+      },
+      body: JSON.stringify({ entries }),
+    });
+    console.log('[scoring-push]', res.status, (await res.text()).slice(0, 200));
+  } catch (e) {
+    console.warn('[scoring-push] failed:', e.message);
+  }
+}
+
 // ==================== 处理单个视频 ====================
 async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, knownDate = null, target = TARGETS[0], durationSec = 0) {
   try {
@@ -369,6 +395,8 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         data.unshift(analysisJson);
         fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
         console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
+        // 推送到 stock-scoring 工作台（新解读 + 前2条自愈；fail-soft，见 notifyScoring 注释）
+        await notifyScoring([analysisJson, ...data.slice(1, 3)]);
         // 企微通知
         await pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
       } else {
