@@ -20,6 +20,9 @@ import axios from 'axios';
 import 'dotenv/config';
 import { chat, chatJSON, printLLMConfig, checkLLMHealth } from './utils/llm.js';
 import { truncateByBytes } from './utils/text.js';
+// ★ 2026-10-28：每写一次完整 videos.json，顺手派生一份「消费侧精简版」views-lite.json
+//   （stock-scoring 工作台只读它：6.4MB → ~150KB，见 build-views-lite.js 头注释）
+import { buildViewsLite } from './build-views-lite.js';
 
 // ==================== 配置区域 ====================
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID（主UP主，走 JSON 归档流程）
@@ -395,6 +398,12 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         data.unshift(analysisJson);
         fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
         console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
+        // ★ 2026-10-28：派生精简版（失败不影响主流程 —— 消费方可回退读完整版）
+        try {
+          buildViewsLite();
+        } catch (e) {
+          console.error('[views-lite] 生成失败（不影响主流程）:', e?.message || e);
+        }
         // 推送到 stock-scoring 工作台（新解读 + 前2条自愈；fail-soft，见 notifyScoring 注释）
         await notifyScoring([analysisJson, ...data.slice(1, 3)]);
         // 企微通知
