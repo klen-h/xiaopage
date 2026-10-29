@@ -20,7 +20,22 @@ import axios from 'axios';
 const DEFAULT_BASE_URL = 'https://token.sensenova.cn/v1';
 // 注意：中转站的模型会不定期下线/改名。旧值 deepseek-v4-pro 已下线，
 // 调用会返回 404 model is not found。故障时用 `node scripts/check-llm.js` 查看实时可用模型。
-const DEFAULT_MODEL = 'deepseek-v4-flash';
+//
+// ★★ 2026-10-29（用户："模型写死在代码里，在 github 配置太麻烦了"）：
+//   原默认 `deepseek-v4-flash` 在当前套餐下**不可用**，实测（同一把 key 逐模型）：
+//     deepseek-v4-flash        429 Throttling.BurstRate / 也有 insufficient_quota
+//     deepseek-flash           429 ModelAccountRpmRateLimitExceeded
+//     deepseek-v4.1-flash      403 model is not available in the current token plan
+//     kimi-k3                  400 temperature 只允许 1（本文件默认 0.2 会直接失败）
+//     glm-5.2                  200 OK   ← 改成这个
+//     sensenova-6.8-flash-lite 200 OK   ← 作为备选
+//   ⚠️ 免费中转的配额**按模型算，而且每天会变**（10-28 时 glm-5.2 还是 429、deepseek-flash 是 200）
+//   ⇒ 不要把某一次实测当永久结论；换模型只改这一行即可（模型名不是密钥，入库安全）。
+const DEFAULT_MODEL = 'glm-5.2';
+// 内置备选：仅当 LLM_FALLBACK_MODELS / LLM_MODEL 未覆盖时追加到候选链尾。
+// 为什么需要：`chat()` 里 429 只会 `break` 到下一个候选，若候选只有 1 个，用完就直接抛错
+//   （`AUTO_FALLBACK` 只在 404「模型下线」时触发，**429 不触发**）。
+const BUILTIN_FALLBACK_MODELS = ['sensenova-6.8-flash-lite'];
 
 /** 规范化 BASE_URL，避免 double slash / 缺协议 / 多写路径导致 404 */
 function normalizeBaseUrl(raw) {
@@ -42,7 +57,10 @@ export const LLM_FALLBACK_MODELS = (process.env.LLM_FALLBACK_MODELS || '')
 // 配置的模型失效时，是否自动从该厂商的可用模型里挑一个继续跑（LLM_AUTO_FALLBACK=0 关闭）
 const AUTO_FALLBACK = process.env.LLM_AUTO_FALLBACK !== '0';
 // 自动兜底时的优先顺序
-const AUTO_FALLBACK_PREFERENCE = ['deepseek-v4-flash', 'deepseek-v4.1-flash', 'glm-5.2', 'kimi-k3', 'deepseek-flash'];
+// ★ 2026-10-29：原顺序把**当前不可用**的模型排在前面（deepseek-v4-flash 429 /
+//   deepseek-v4.1-flash 403 / kimi-k3 400 温度限制），等于"兜底兜到坑里"。
+//   改为按当日实测可用性排序；注意配额每天变，失效时重跑 `node scripts/check-llm.js`。
+const AUTO_FALLBACK_PREFERENCE = ['glm-5.2', 'sensenova-6.8-flash-lite', 'deepseek-flash'];
 
 const NO_JSON_FORMAT = process.env.LLM_NO_JSON_FORMAT === '1';
 
@@ -164,7 +182,11 @@ export async function chat(messages, options = {}) {
     throw new Error('缺少 LLM_API_KEY：请在环境变量 / Secrets 中配置 LLM_API_KEY');
   }
 
-  const candidates = [primaryModel || LLM_MODEL, ...LLM_FALLBACK_MODELS].filter(Boolean);
+  // ★ 2026-10-29：链尾追加内置备选。原实现只有 `[LLM_MODEL, ...LLM_FALLBACK_MODELS]`，
+  //   而 `LLM_FALLBACK_MODELS` 默认来自 env（多数环境为空）⇒ 429 时"无模型可切"，
+  //   直接抛「所有候选模型均不可用」。内置备选保证至少有一条退路。
+  const candidates = [primaryModel || LLM_MODEL, ...LLM_FALLBACK_MODELS,
+                      ...BUILTIN_FALLBACK_MODELS].filter(Boolean);
   const seen = new Set();
   const models = candidates.filter(m => !seen.has(m) && seen.add(m));
   let exhaustedIndex = 0; // 已尝试光 candidates 的前 N 个后，才考虑自动兜底
