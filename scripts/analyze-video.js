@@ -28,6 +28,72 @@ import { buildViewsLite } from './build-views-lite.js';
 const BILI_UID = process.env.BILI_UID || '2137589551'; // 李大霄UID（主UP主，走 JSON 归档流程）
 const DATA_PATH = path.resolve('public/data/videos.json');
 
+// ==================== 失败重试与冷却（★ 2026-10-29）====================
+// 【为什么要做】"失败就继续补"其实**本来就成立** —— 失败的视频不会写进 videos.json，
+//   所以 bvid 不在已处理列表里，下次运行自然会重试。但这也意味着：
+//   一个**永远失败**的视频（没有字幕且 yt-dlp 下不动 / 内容触发模型拒答 / 视频已删除）
+//   会每次运行都重新 下载几十 MB + faster-whisper 转录几分钟 + 打 LLM
+//   ⇒ 持续烧 Actions 时长和 LLM 额度，而日志里只留一行"处理失败"，很难发现。
+// 【做法】失败计数落盘到 public/data/video_failures.json（会被 Actions 提交，跨运行保留）：
+//   前 VIDEO_FAIL_SOFT_LIMIT 次照常重试（应对临时 429/网络抖动）；
+//   之后进入**指数冷却**（24h → 48h → … 封顶 7 天），冷却期内直接跳过、不再下载转录；
+//   一旦成功立刻清空该 bvid 的失败记录。
+// 【为什么不用"失败 N 次永久跳过"】C 站限流、中转额度、cookie 失效都是临时故障，
+//   永久跳过会让视频**静默消失**（用户以为补完了，其实永久丢了）。
+const FAIL_PATH = path.resolve('public/data/video_failures.json');
+const FAIL_SOFT_LIMIT = Number(process.env.VIDEO_FAIL_SOFT_LIMIT || 3);
+const FAIL_COOL_BASE_HOURS = Number(process.env.VIDEO_FAIL_COOL_HOURS || 24);
+const FAIL_COOL_MAX_HOURS = 24 * 7;
+
+function readFailures() {
+  try {
+    return JSON.parse(fs.readFileSync(FAIL_PATH, 'utf-8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeFailures(map) {
+  try {
+    fs.writeFileSync(FAIL_PATH, JSON.stringify(map, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('[failures] 写入失败记录出错（不影响主流程）:', e?.message || e);
+  }
+}
+
+/** 返回还需冷却的毫秒数；0 表示可以立即重试 */
+function failureWaitMs(rec) {
+  if (!rec || !rec.count || rec.count < FAIL_SOFT_LIMIT) return 0;
+  const hours = Math.min(
+    FAIL_COOL_BASE_HOURS * Math.pow(2, rec.count - FAIL_SOFT_LIMIT),
+    FAIL_COOL_MAX_HOURS
+  );
+  const until = new Date(rec.lastAt || 0).getTime() + hours * 3600000;
+  return Math.max(0, until - Date.now());
+}
+
+function noteFailure(bvid, error) {
+  const map = readFailures();
+  const prev = map[bvid] || { count: 0 };
+  map[bvid] = {
+    count: prev.count + 1,
+    lastError: String(error || 'unknown').slice(0, 200),
+    lastAt: new Date().toISOString()
+  };
+  writeFailures(map);
+  const rec = map[bvid];
+  const waitH = Math.round(failureWaitMs(rec) / 3600000);
+  console.log(`   ↳ 记为失败第 ${rec.count} 次${waitH > 0 ? `，冷却 ${waitH} 小时后重试` : ''}: ${rec.lastError}`);
+}
+
+function clearFailure(bvid) {
+  const map = readFailures();
+  if (map[bvid]) {
+    delete map[bvid];
+    writeFailures(map);
+  }
+}
+
 // 额外解读的UP主：只做文字解读 + 企微推送，不写入 videos.json
 // 格式：EXTRA_UPS="1039025435,584685158"（可用 Secret 覆盖）
 const EXTRA_UPS = (process.env.EXTRA_UPS || '1039025435,584685158,520819684,290548469')
@@ -280,9 +346,27 @@ async function checkAndProcessNewVideos(target) {
       break;
     }
 
+    // ★ 2026-10-29：失败冷却期内直接跳过 —— 不跑 yt-dlp、不转录、不调 LLM。
+    //   这是"失败继续补"与"不要无限烧额度"之间的那条线：
+    //   前几次失败照常重试（临时 429/网络抖动很常见），超过阈值才冷却。
+    const failures = readFailures();
+    const waitMs = failureWaitMs(failures[video.bvid]);
+    if (waitMs > 0) {
+      const rec = failures[video.bvid];
+      console.log(`跳过（已失败 ${rec.count} 次，冷却还剩 ${Math.ceil(waitMs / 3600000)} 小时，`
+        + `上次原因: ${rec.lastError || '未知'}）: ${video.bvid}`);
+      continue;
+    }
+
     const videoUrl = `https://www.bilibili.com/video/${video.bvid}`;
     console.log(`\n发现新视频: ${video.bvid} - ${video.title || '无标题'}`);
-    await processSingleVideo(videoUrl, video.title, video.bvid, video.date, target, video.duration);
+    const result = await processSingleVideo(videoUrl, video.title, video.bvid, video.date, target, video.duration);
+    if (result && result.ok) {
+      clearFailure(video.bvid);
+    } else {
+      // 失败不写 videos.json ⇒ 下次仍在候选里，靠这里的计数+冷却控制频率
+      noteFailure(video.bvid, result?.error);
+    }
     processedCount++;
 
     // 避免请求过快
@@ -382,7 +466,7 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
 
     if (!transcript) {
       console.error('字幕获取失败，跳过此视频');
-      return;
+      return { ok: false, error: '字幕获取失败（B站字幕不可用且语音转录失败）' };
     }
 
     // 3. AI 分析
@@ -410,6 +494,7 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         await pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
       } else {
         console.error('处理失败');
+        return { ok: false, error: 'AI 分析未返回结果（模型空响应/超时，见上方 llm 日志）' };
       }
     } else {
       // 文字解读模式：不生成 JSON，只推送企微
@@ -418,7 +503,7 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
 
       if (!plainText) {
         console.error('解读失败，跳过推送');
-        return;
+        return { ok: false, error: 'LLM 文字解读失败（空响应/限流）' };
       }
 
       const pushed = await pushWechatPlain(videoTitle, bvid, plainText, target);
@@ -427,12 +512,17 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         console.log('✅ 解读已推送并记录');
       } else {
         console.error('⚠️ 推送失败，本次不记录，下次运行会重试');
+        return { ok: false, error: '企微推送失败' };
       }
     }
 
   } catch (error) {
     console.error('处理失败:', error.message);
+    return { ok: false, error: error.message };
   }
+  // ★ 2026-10-29：改为返回结果对象 —— 调用方靠它决定"记失败"还是"清空失败记录"。
+  //   原来这里是隐式 undefined，成功/失败无法区分，失败计数也就无从谈起。
+  return { ok: true };
 }
 
 // ==================== B站AI字幕获取 ====================
