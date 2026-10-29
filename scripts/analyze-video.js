@@ -952,30 +952,80 @@ async function downloadAudioViaBiliApi(videoUrl, basePath, timeout = 300000) {
     //      且流量更小 —— 一次少下 30~60%；
     //   ③ 若拿不到音频流仍回退 durl（音视频混合流）。
     const dashAudio = (data.dash?.audio || []).sort((a, b) => (a.bandwidth || 0) - (b.bandwidth || 0))[0];
-    // dash 音频优先；没有则退回 durl（音视频混合流，qn=16 时体积也很小）
-    const media = dashAudio ? { url: dashAudio.baseUrl, ext: 'm4a' } : (data.durl?.[0]?.url ? { url: data.durl[0].url, ext: 'mp4' } : null);
 
-    if (!media) {
+    // ★★★ 2026-10-30【567 的真正解法】B站 playurl 返回的 `baseUrl` 常常是
+    //   **PCDN 节点**（`*.mcdn.bilivideo.cn:8082`）或第三方 P2P（`edge.mountaintoys.cn`），
+    //   这类节点对**数据中心 IP（GitHub Actions runner）**极不友好，直接回 567；
+    //   而同一音频的 `backupUrl` 里通常还带**官方 CDN**（`upos-*.bilivideo.com`）。
+    //   本机实测同一视频的三个候选：
+    //     xy...mcdn.bilivideo.cn:8082        → 206（本机）/ Actions 上 567
+    //     b-baaa....edge.mountaintoys.cn     → 不可达（第三方 P2P）
+    //     upos-sz-mirrorcoso1.bilivideo.com  → 206 ✅
+    //   原实现**只取 baseUrl** ⇒ 等于放着能用的官方 CDN 不用，专挑被风控的那个。
+    const rankCdn = (u) => {
+      // ⚠️ 官方域名形如 `upos-sz-mirrorcoso1.bilivideo.com`，中间**带连字符**。
+      //   第一版写成 `[a-z0-9]+`（不含 `-`）⇒ 匹配失败 ⇒ 官方 CDN 被当成 rank 1，
+      //   结果排在第三方 P2P（也是 1）后面，改完等于没改。必须用 `[\w.-]*`。
+      if (/^https?:\/\/upos-[\w.-]*bilivideo\.com/i.test(u)) return 0;   // 官方 CDN 优先
+      if (/mcdn\.bilivideo\.cn/i.test(u)) return 2;                     // PCDN 排最后
+      return 1;
+    };
+    let media = null;
+    if (dashAudio) {
+      media = {
+        urls: [dashAudio.baseUrl, ...(dashAudio.backupUrl || [])]
+          .filter(Boolean)
+          .sort((a, b) => rankCdn(a) - rankCdn(b)),
+        ext: 'm4a'
+      };
+    } else if (data.durl?.[0]?.url) {
+      const du = data.durl[0];
+      media = {
+        urls: [du.url, ...(du.backup_url || du.backupUrl || [])].filter(Boolean),
+        ext: 'mp4'
+      };
+    }
+
+    if (!media || !media.urls.length) {
       console.warn('⚠️ 官方接口兜底失败：没有可取流地址');
       return null;
     }
 
-    const ext = media.url.includes('.flv') ? 'flv' : media.ext;
+    const ext = media.urls[0].includes('.flv') ? 'flv' : media.ext;
     const filePath = `${basePath}.${ext}`;
-    console.log(`正在通过官方接口下载音频（${dashAudio ? 'dash' : 'durl'}）...`);
+    console.log(`正在通过官方接口下载音频（${dashAudio ? 'dash' : 'durl'}，候选 ${media.urls.length} 个）...`);
 
-    const res = await axios.get(media.url, {
-      headers,                    // 直链 CDN 同样需要 Cookie + Referer
-      responseType: 'stream',
-      timeout,
-      maxRedirects: 5,
-      validateStatus: s => s < 400
-    });
-
-    const contentType = String(res.headers['content-type'] || '');
-    if (contentType.includes('mpegurl') || contentType.includes('m3u8') || contentType.startsWith('text/')) {
-      console.warn(`⚠️ 官方接口兜底失败：返回的不是媒体文件（${contentType}）`);
-      res.data.destroy?.();
+    // 依次尝试候选地址：官方 CDN 失败再退 PCDN（最多 4 个，避免长时间卡住）
+    let res = null;
+    let lastErr = null;
+    for (const u of media.urls.slice(0, 4)) {
+      let host = '?';
+      try { host = new URL(u).host; } catch { /* 非法 URL 直接用 '?' */ }
+      try {
+        const r = await axios.get(u, {
+          headers,                    // 直链 CDN 同样需要 Cookie + Referer
+          responseType: 'stream',
+          timeout,
+          maxRedirects: 5,
+          validateStatus: s => s < 400
+        });
+        const ct = String(r.headers['content-type'] || '');
+        if (ct.includes('mpegurl') || ct.includes('m3u8') || ct.startsWith('text/')) {
+          console.warn(`   候选 ${host} 返回非媒体(${ct})，换下一个`);
+          r.data.destroy?.();
+          continue;
+        }
+        console.log(`   使用 ${host}`);
+        res = r;
+        break;
+      } catch (e) {
+        lastErr = e;
+        console.warn(`   候选 ${host} 失败: ${e?.response?.status || e?.code || e?.message}`);
+      }
+    }
+    if (!res) {
+      console.warn('⚠️ 官方接口兜底失败：所有候选 CDN 均不可用');
+      if (lastErr) throw lastErr;
       return null;
     }
 
