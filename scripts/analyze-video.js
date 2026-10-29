@@ -322,7 +322,12 @@ async function checkAndProcessNewVideos(target) {
   // 读取已处理的视频BV号
   const processedBVs = readProcessedBVs(target);
 
-  let processedCount = 0;
+  // ★ 2026-10-30：拆成两个计数 —— 原来只有 `processedCount`，且**成功失败都 ++**，
+  //   于是日志打出"新增 4 个视频"而实际一条都没写进 videos.json（用户实测：
+  //   4 个全因 HTTP 567 失败，却显示"新增 4 个"）。这种"看起来成功"的日志
+  //   比没日志更糟 —— 会让人以为补完了，实际数据仍是缺的。
+  let processedCount = 0;   // **真正写进去的条数**（受 maxPerRun 限制）
+  let attemptedCount = 0;   // 尝试过的条数（含失败，仅用于日志与诊断）
   for (const video of candidates) {
     if (processedBVs.includes(video.bvid)) {
       console.log(`跳过已处理: ${video.bvid}`);
@@ -361,19 +366,30 @@ async function checkAndProcessNewVideos(target) {
     const videoUrl = `https://www.bilibili.com/video/${video.bvid}`;
     console.log(`\n发现新视频: ${video.bvid} - ${video.title || '无标题'}`);
     const result = await processSingleVideo(videoUrl, video.title, video.bvid, video.date, target, video.duration);
+    attemptedCount++;
     if (result && result.ok) {
       clearFailure(video.bvid);
+      // ★ 只有成功才占 maxPerRun 名额 —— 否则"前 4 个失败吃满 5 个额度"
+      //   会把后面本来能成功的视频直接挡掉（本次实测就是这样：4 个 567 失败后，
+      //   第 5 个连试都没试）。失败的代价已经由冷却机制控制，不需要再占名额。
+      processedCount++;
     } else {
       // 失败不写 videos.json ⇒ 下次仍在候选里，靠这里的计数+冷却控制频率
       noteFailure(video.bvid, result?.error);
     }
-    processedCount++;
 
     // 避免请求过快
     await sleep(3000);
   }
 
-  console.log(`\n[${target.name}] 处理完成，新增 ${processedCount} 个视频`);
+  // ★ 2026-10-30：把"尝试"和"成功"分开报。原输出 `新增 ${processedCount} 个视频`
+  //   在成功失败都计数的实现下，会把 4 个失败报成"新增 4 个"。
+  const failedCount = attemptedCount - processedCount;
+  console.log(`\n[${target.name}] 处理完成：成功新增 ${processedCount} 个`
+    + (failedCount > 0
+      ? `，失败 ${failedCount} 个（未写入 videos.json，下次会重试；连续失败 3 次后进入冷却）`
+      : '')
+    + `｜本次尝试 ${attemptedCount} 个`);
 }
 
 // 已处理的BV号：json模式读 videos.json，文字模式读独立状态文件
@@ -930,7 +946,12 @@ async function downloadAudioViaBiliApi(videoUrl, basePath, timeout = 300000) {
     }
 
     const data = playRes.data?.data || {};
-    const dashAudio = (data.dash?.audio || []).sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))[0];
+    // ★★ 2026-10-30：改选**最低码率**音频（原来选最高）。
+    //   ① 识别用的是 faster-whisper base，64~128k 完全够；192k 对转录质量没有可感知提升；
+    //   ② 实测 567（B站风控）几乎都出在**下载阶段**，码率越低请求越"像普通用户"，
+    //      且流量更小 —— 一次少下 30~60%；
+    //   ③ 若拿不到音频流仍回退 durl（音视频混合流）。
+    const dashAudio = (data.dash?.audio || []).sort((a, b) => (a.bandwidth || 0) - (b.bandwidth || 0))[0];
     // dash 音频优先；没有则退回 durl（音视频混合流，qn=16 时体积也很小）
     const media = dashAudio ? { url: dashAudio.baseUrl, ext: 'm4a' } : (data.durl?.[0]?.url ? { url: data.durl[0].url, ext: 'mp4' } : null);
 
@@ -999,7 +1020,13 @@ async function downloadAudioViaBiliApi(videoUrl, basePath, timeout = 300000) {
     } catch {
       detail = '(响应体无法序列化)';
     }
-    console.warn('⚠️ 官方接口兜底失败:', status || error?.message || 'unknown', detail);
+    // ★ 2026-10-30：567 是 B站特有的"请求被拒绝"，实测 `view`/`playurl` 都成功、
+    //   只有 CDN 下载这一跳被拒 ⇒ 基本可判定为 **Cookie 失效** 或 **Actions 数据中心 IP 被风控**。
+    //   把它直接写进日志，省得下次又要从头猜（本次 5 个视频全挂在这一步）。
+    const hint = status === 567
+      ? '  ← 567=B站风控：优先检查 BILI_COOKIE 是否过期（重新登录导出），其次可能是 runner IP 被拦'
+      : '';
+    console.warn('⚠️ 官方接口兜底失败:', status || error?.message || 'unknown', detail + hint);
     return null;
   }
 }
