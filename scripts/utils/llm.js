@@ -36,6 +36,13 @@ const DEFAULT_MODEL = 'glm-5.2';
 // 为什么需要：`chat()` 里 429 只会 `break` 到下一个候选，若候选只有 1 个，用完就直接抛错
 //   （`AUTO_FALLBACK` 只在 404「模型下线」时触发，**429 不触发**）。
 const BUILTIN_FALLBACK_MODELS = ['sensenova-6.8-flash-lite'];
+// ★★ 2026-10-30：**已知失效的模型，即便 env/Secrets 里配了也不用**。
+//   实测（同一把 key 逐模型）：deepseek-v4-flash 429 / deepseek-v4.1-flash 403。
+//   为什么必须替换而不是"排在后面"：Secrets 里的 `LLM_MODEL` 会被当成首选，
+//   一个配额耗尽的模型会先吃掉 **30+60+120+240=450 秒** 的退避才轮到下一个
+//   （用户日志里就是这样：5 次重试全打在同一个模型上，最后 ECONNRESET）。
+//   ⚠️ 与 stock-scoring 的 `_MODEL_KNOWN_DEAD` 保持同一份名单，两处要一起改。
+const KNOWN_DEAD_MODELS = ['deepseek-v4-flash', 'deepseek-v4.1-flash'];
 
 /** 规范化 BASE_URL，避免 double slash / 缺协议 / 多写路径导致 404 */
 function normalizeBaseUrl(raw) {
@@ -126,6 +133,22 @@ function isRateLimited(info) {
   return info.status === 429 || String(info.code || '').includes('429');
 }
 
+/**
+ * 429 里"等一等就能好"和"等多久都没用"是两回事，必须分开。
+ *
+ * ★ 2026-10-30（用户日志：连续 5 次 429、退避 450 秒、最后 ECONNRESET）：
+ *   `insufficient_quota`（配额耗尽）、`ModelAccountRpmRateLimitExceeded`（账号级）、
+ *   `Throttling.BurstRate`（套餐级）这三类**不会因为睡眠而恢复**
+ *   ⇒ 继续退避只是把时间烧在同一个死模型上，应当**立刻换下一个候选**。
+ *   只有泛化的 `tpm/rpm` 瞬时限流才值得短退避重试。
+ */
+function isQuotaExhausted(info) {
+  const t = `${info.code || ''} ${info.message || ''} ${info.body || ''}`.toLowerCase();
+  return t.includes('insufficient_quota')
+    || t.includes('rpmratelimitexceeded')
+    || t.includes('burst');
+}
+
 function isRetryable(info, error) {
   if (isAuthError(info)) return false;
   if (isRateLimited(info)) return true;
@@ -185,7 +208,14 @@ export async function chat(messages, options = {}) {
   // ★ 2026-10-29：链尾追加内置备选。原实现只有 `[LLM_MODEL, ...LLM_FALLBACK_MODELS]`，
   //   而 `LLM_FALLBACK_MODELS` 默认来自 env（多数环境为空）⇒ 429 时"无模型可切"，
   //   直接抛「所有候选模型均不可用」。内置备选保证至少有一条退路。
-  const candidates = [primaryModel || LLM_MODEL, ...LLM_FALLBACK_MODELS,
+  // ★ 2026-10-30：主模型若在 KNOWN_DEAD_MODELS 里，**直接替换**而非排后 ——
+  //   否则会先耗掉 450 秒退避才轮到可用模型（用户日志里的实际情况）。
+  let primary = primaryModel || LLM_MODEL;
+  if (KNOWN_DEAD_MODELS.includes(primary)) {
+    console.warn(`⚠️ 主模型 ${primary} 已知不可用（429/403），改用 ${DEFAULT_MODEL}`);
+    primary = DEFAULT_MODEL;
+  }
+  const candidates = [primary, ...LLM_FALLBACK_MODELS,
                       ...BUILTIN_FALLBACK_MODELS].filter(Boolean);
   const seen = new Set();
   const models = candidates.filter(m => !seen.has(m) && seen.add(m));
@@ -231,14 +261,23 @@ export async function chat(messages, options = {}) {
         }
 
         // 限流：退避重试；本模型重试用尽后换下一个候选模型（不同模型额度通常独立）
+        // ★ 2026-10-30：**区分"等一等会好"和"等多久都没用"**。
+        //   原实现对任何 429 都重试 5 次（30+60+120+240=450 秒），而配额耗尽型
+        //   （insufficient_quota / ModelAccountRpmRateLimitExceeded / BurstRate）
+        //   睡眠不会带来任何恢复 ⇒ 450 秒纯浪费，最后还是一样的错。
+        //   现在：配额耗尽型立即换模型；普通 tpm/rpm 只退避 2 次（30+60=90 秒）。
         if (isRateLimited(info)) {
-          if (attempt < maxRetries) {
+          const quotaDead = isQuotaExhausted(info);
+          const maxAttempts = quotaDead ? 1 : Math.min(maxRetries, 2);
+          if (attempt < maxAttempts) {
             const waitSec = backoffSeconds(error, attempt);
-            console.warn(`⚠️ LLM 限流(429)，${waitSec}秒后第${attempt + 1}/${maxRetries}次重试...`);
+            console.warn(`⚠️ LLM 限流(429)，${waitSec}秒后第${attempt + 1}/${maxAttempts}次重试...`);
             await sleep(waitSec * 1000);
             continue;
           }
-          console.warn(`⚠️ 模型 ${model} 持续限流(429)，切换到其他模型`);
+          console.warn(quotaDead
+            ? `⚠️ 模型 ${model} 配额已耗尽（${info.code || 'insufficient_quota'}），立即切换下一个模型`
+            : `⚠️ 模型 ${model} 持续限流(429)，切换到其他模型`);
           break;
         }
 

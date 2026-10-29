@@ -975,7 +975,31 @@ async function downloadAudioViaBiliApi(videoUrl, basePath, timeout = 300000) {
     console.log(`✅ 官方接口下载成功（${(size / 1048576).toFixed(1)} MB）`);
     return filePath;
   } catch (error) {
-    console.warn('⚠️ 官方接口兜底失败:', error.response?.status || error.message, JSON.stringify(error.response?.data)?.slice(0, 200));
+    // ★★ 2026-10-30（实测日志："音频处理失败: Converting circular structure to JSON
+    //   --> starting at object with constructor 'TLSSocket'"）：
+    //   根因是这里用 `JSON.stringify(error.response.data)` 打日志 ——
+    //   而本请求是 `responseType: 'stream'`，`response.data` 是 IncomingMessage，
+    //   内含 `TLSSocket`（循环引用）⇒ stringify 直接抛异常 ⇒ **catch 自己在 catch 里崩了**。
+    //   后果比"日志不好看"严重得多：
+    //     ① 真实原因（HTTP 567 风控 / ECONNRESET）被这个序列化错误完全掩盖，日志无从排查；
+    //     ② 抛出的异常冒泡到上层，整个视频被标记为"字幕获取失败"——
+    //        实测 5 个视频里有 2 个本来是能下的，全卡在这行。
+    //   修法：流对象不做序列化（顺便 destroy 释放连接），其余情况用 try 包住，
+    //        保证 catch 里**永远不会再抛**。
+    const status = error?.response?.status;
+    let detail = '';
+    try {
+      const d = error?.response?.data;
+      if (d && typeof d.pipe === 'function') {
+        detail = '(stream 响应体，不序列化)';
+        d.destroy?.();
+      } else if (d != null) {
+        detail = String(typeof d === 'string' ? d : JSON.stringify(d)).slice(0, 200);
+      }
+    } catch {
+      detail = '(响应体无法序列化)';
+    }
+    console.warn('⚠️ 官方接口兜底失败:', status || error?.message || 'unknown', detail);
     return null;
   }
 }
