@@ -2,6 +2,17 @@ name: 检查B站新视频
 
 on:
   workflow_dispatch:
+    inputs:
+      only_latest:
+        # ★ 2026-10-29（用户："需要再补李大霄的 5 个视频，今天只补了最新的"）：
+        #   脚本里 `ONLY_LATEST = process.env.ONLY_LATEST !== '0'` **默认为 true**
+        #   ⇒ 即使主 UP 的 `maxPerRun: 5`，也只取最新 1 条。
+        #   补历史时填 0 ⇒ 走"按列表逐条"分支，主 UP 会一次补到 maxPerRun(5) 个。
+        #   ⚠️ 去重靠 videos.json 里的 bvid，**重复触发不会重复推送**，
+        #     但每次都会把最近 5 条重新转录一遍（慢 + 费 LLM 额度）⇒ 只在确实缺数据时用。
+        description: '1=只处理最新一条；0=按列表补齐（主UP最多5个，可用来补历史）'
+        required: false
+        default: '1'
 
 # 定时器每30分钟触发一次，而长视频转录可能跑很久：
 # 同一时间只保留一个运行，避免两个任务同时处理同一视频导致重复推送
@@ -68,6 +79,10 @@ jobs:
 
       - name: 检查新视频并分析
         env:
+          # ★ 2026-10-29：必须显式传下去。脚本里 `ONLY_LATEST !== '0'` 为 true 时
+          #   只取最新 1 条 ⇒ 主 UP 的 `maxPerRun: 5` 被它短路，永远补不满。
+          #   `|| '1'` 兜底：非 workflow_dispatch 触发（若以后加回 cron）时输入为 null。
+          ONLY_LATEST: ${{ github.event.inputs.only_latest || '1' }}
           BILI_COOKIE: ${{ secrets.BILI_COOKIE }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
