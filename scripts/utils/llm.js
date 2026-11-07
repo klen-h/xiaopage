@@ -396,7 +396,23 @@ export async function chatJSON(systemPrompt, userPrompt, options = {}) {
       return JSON.parse(cleaned);
     } catch (e) {
       lastErr = e;
-      console.warn(`[chatJSON] 第 ${attempt + 1} 次解析失败: ${e?.message}`);
+      // ★ 2026-11-07：把 finish_reason / completion_tokens 一起打出来。
+      //   之前只打 "Expected ',' or ']' at position 4987" —— 看不出到底是
+      //   「额度用尽被截」还是「服务端主动截」，只能靠猜。
+      const finish = data?.choices?.[0]?.finish_reason;
+      const u = data?.usage || {};
+      console.warn(`[chatJSON] 第 ${attempt + 1} 次解析失败: ${e?.message}`
+        + ` | finish=${finish} completion_tokens=${u.completion_tokens}`
+        + ` prompt_tokens=${u.prompt_tokens}`);
+      // ★ 先试修复截断（服务端在 ~4987 字符处截断，不是额度问题）：
+      //   补全未闭合的括号后至少能解析，尾部缺失由调用方按"原文未提及"处理。
+      //   ⚠️ 必须传**原始 content**，不能传 cleaned —— cleanJSON 里的
+      //   `lastIndexOf('}')` 会把截断 JSON 误裁到中间某个 `}`，丢掉后面全部内容。
+      const repaired = repairTruncatedJSON(String(content));
+      if (repaired) {
+        console.warn('[chatJSON] JSON 被截断，已自动补全括号（尾部字段可能缺失）');
+        return repaired;
+      }
       // 只打前 240 字，既能定位问题，又不会把整段输出刷进日志
       console.warn('[chatJSON] 模型返回片段:', JSON.stringify(String(content).slice(0, 240)));
       messages[0] = {
@@ -418,6 +434,56 @@ export function cleanJSON(text) {
   const end = s.lastIndexOf('}');
   if (start !== -1 && end !== -1 && end > start) s = s.slice(start, end + 1);
   return s;
+}
+
+/**
+ * 尝试修复被**服务端截断**的 JSON（补全未闭合的括号）。
+ *
+ * ★ 2026-11-07 实测：`sensenova-6.8-flash-lite` 会把 JSON 截在 ~4987 字符处
+ *   （`completion_tokens` 远小于 max_tokens=16384 ⇒ **不是额度用尽**，
+ *     是服务端/模型侧主动停），典型表现是 `"market_evidence": ["…", "…"`
+ *   数组没闭合，报 `Expected ',' or ']' after array element`。
+ *
+ * 策略：扫描一遍，记住"最后一个结构完整的位置"，从那截断，
+ *       然后按括号栈补全 `]` / `}`。尾部缺失的字段由调用方按缺失处理。
+ * ⚠️ 只接受"从 `{` 开始"的文本；修不好就返回 null，交给重试。
+ * ⚠️ **不要**先经过 `cleanJSON` —— 那里的 `lastIndexOf('}')` 会把截断 JSON
+ *    误裁到中间某个 `}`，把后面本来还能救的内容全丢掉。
+ */
+export function repairTruncatedJSON(text) {
+  const raw = String(text || '');
+  const begin = raw.indexOf('{');
+  if (begin === -1) return null;
+  const s = raw.slice(begin);
+  let inStr = false;
+  let esc = false;
+  let lastGood = 0;
+  const stack = [];
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === '\\') esc = true;
+      else if (c === '"') { inStr = false; lastGood = i + 1; }
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    if (c === '{' || c === '[') { stack.push(c); lastGood = i + 1; }
+    else if (c === '}' || c === ']') { stack.pop(); lastGood = i + 1; }
+    else if (c === ',') lastGood = i + 1;
+  }
+  if (!stack.length) return null;   // 括号已闭合，说明不是截断问题
+  let out = s.slice(0, lastGood);
+  out = out.replace(/[,\s]+$/, '');
+  for (let i = stack.length - 1; i >= 0; i--) {
+    out += stack[i] === '{' ? '}' : ']';
+  }
+  try {
+    const obj = JSON.parse(out);
+    return (obj && typeof obj === 'object') ? obj : null;
+  } catch {
+    return null;
+  }
 }
 
 /** 拉取可用模型列表，失败返回空数组 */
