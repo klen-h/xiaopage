@@ -31,7 +31,10 @@ const DEFAULT_BASE_URL = 'https://token.sensenova.cn/v1';
 //     sensenova-6.8-flash-lite 200 OK   ← 作为备选
 //   ⚠️ 免费中转的配额**按模型算，而且每天会变**（10-28 时 glm-5.2 还是 429、deepseek-flash 是 200）
 //   ⇒ 不要把某一次实测当永久结论；换模型只改这一行即可（模型名不是密钥，入库安全）。
-const DEFAULT_MODEL = 'glm-5.2';
+// ★★ 2026-11-07：SenseNova 公告 `glm-5.2` 于 **2026-11-18 下线**（路由失效、
+//   请求无响应），官方要求改用 11-04 已上线的 `glm-5.3`。
+//   上面 10-29 的逐模型实测记录是**历史事实**，保留不改。
+const DEFAULT_MODEL = 'glm-5.3';
 // 内置备选：仅当 LLM_FALLBACK_MODELS / LLM_MODEL 未覆盖时追加到候选链尾。
 // 为什么需要：`chat()` 里 429 只会 `break` 到下一个候选，若候选只有 1 个，用完就直接抛错
 //   （`AUTO_FALLBACK` 只在 404「模型下线」时触发，**429 不触发**）。
@@ -42,7 +45,11 @@ const BUILTIN_FALLBACK_MODELS = ['sensenova-6.8-flash-lite'];
 //   一个配额耗尽的模型会先吃掉 **30+60+120+240=450 秒** 的退避才轮到下一个
 //   （用户日志里就是这样：5 次重试全打在同一个模型上，最后 ECONNRESET）。
 //   ⚠️ 与 stock-scoring 的 `_MODEL_KNOWN_DEAD` 保持同一份名单，两处要一起改。
-const KNOWN_DEAD_MODELS = ['deepseek-v4-flash', 'deepseek-v4.1-flash'];
+// ★ 2026-11-07 追加 `glm-5.2`（公告 11-18 下线，属**结构性不可用**）。
+//   本地 `.env` 与 GitHub Actions `secrets.LLM_MODEL` 是**两套配置**，且都可能
+//   残留 glm-5.2；护栏在 `chat()` 里把 dead 的 primary **替换成 DEFAULT_MODEL**，
+//   ⇒ 不必登平台逐个改 env，重跑 522 条也不会跑在快下线的模型上。
+const KNOWN_DEAD_MODELS = ['deepseek-v4-flash', 'deepseek-v4.1-flash', 'glm-5.2'];
 
 /** 规范化 BASE_URL，避免 double slash / 缺协议 / 多写路径导致 404 */
 function normalizeBaseUrl(raw) {
@@ -67,7 +74,10 @@ const AUTO_FALLBACK = process.env.LLM_AUTO_FALLBACK !== '0';
 // ★ 2026-10-29：原顺序把**当前不可用**的模型排在前面（deepseek-v4-flash 429 /
 //   deepseek-v4.1-flash 403 / kimi-k3 400 温度限制），等于"兜底兜到坑里"。
 //   改为按当日实测可用性排序；注意配额每天变，失效时重跑 `node scripts/check-llm.js`。
-const AUTO_FALLBACK_PREFERENCE = ['glm-5.2', 'sensenova-6.8-flash-lite', 'deepseek-flash'];
+// ★ 2026-11-07：首位同步切到 glm-5.3（glm-5.2 公告 11-18 下线）。
+//   ⚠️ 这里最容易漏：它不走 `KNOWN_DEAD_MODELS` 护栏，是 404 自动兜底时的
+//     偏好列表 —— 不改的话，主模型失效后会自动挑一个**已下线**的模型。
+const AUTO_FALLBACK_PREFERENCE = ['glm-5.3', 'sensenova-6.8-flash-lite', 'deepseek-flash'];
 
 const NO_JSON_FORMAT = process.env.LLM_NO_JSON_FORMAT === '1';
 
@@ -91,12 +101,27 @@ function maskKey(key) {
   return `${key.slice(0, 6)}***${key.slice(-4)} (长度${key.length})`;
 }
 
+/**
+ * 应用 KNOWN_DEAD 护栏后的**实际主模型**（纯函数，不联网、不调 LLM）。
+ *
+ * ★ 为什么要导出：`.env` / Secrets 里残留 `glm-5.2` 时，`LLM_MODEL` 打印出来
+ *   仍是旧值，而 `chat()` 实际会换成 `DEFAULT_MODEL` —— "显示值 ≠ 生效值"
+ *   会把排障方向完全带偏。导出后诊断脚本与审计可以复用同一份判据，
+ *   而不必靠读源码去相信护栏存在。
+ */
+export function resolvePrimaryModel(primary) {
+  const p = String(primary || LLM_MODEL || DEFAULT_MODEL).trim();
+  return KNOWN_DEAD_MODELS.includes(p) ? DEFAULT_MODEL : p;
+}
+
 /** 打印当前 LLM 配置（密钥做脱敏） */
 export function printLLMConfig() {
   console.log('=== LLM 配置 ===');
   console.log('Base URL :', LLM_BASE_URL);
   console.log('Endpoint :', CHAT_URL);
-  console.log('Model    :', LLM_MODEL);
+  const effective = resolvePrimaryModel();
+  console.log('Model    :', LLM_MODEL,
+    effective !== LLM_MODEL ? `（已失效/下线 => 实际生效 ${effective}）` : '');
   if (LLM_FALLBACK_MODELS.length) console.log('备选模型 :', LLM_FALLBACK_MODELS.join(', '));
   console.log('API Key  :', maskKey(LLM_API_KEY));
   console.log('JSON模式 :', NO_JSON_FORMAT ? '关闭' : '开启');
@@ -210,10 +235,12 @@ export async function chat(messages, options = {}) {
   //   直接抛「所有候选模型均不可用」。内置备选保证至少有一条退路。
   // ★ 2026-10-30：主模型若在 KNOWN_DEAD_MODELS 里，**直接替换**而非排后 ——
   //   否则会先耗掉 450 秒退避才轮到可用模型（用户日志里的实际情况）。
-  let primary = primaryModel || LLM_MODEL;
-  if (KNOWN_DEAD_MODELS.includes(primary)) {
-    console.warn(`⚠️ 主模型 ${primary} 已知不可用（429/403），改用 ${DEFAULT_MODEL}`);
-    primary = DEFAULT_MODEL;
+  // ★ 2026-11-07：改用 `resolvePrimaryModel()`（与原逻辑等价，但现在可被
+  //   `check-llm.js` / 审计脚本直接验证，不必靠读源码相信护栏存在）。
+  const rawPrimary = primaryModel || LLM_MODEL;
+  let primary = resolvePrimaryModel(rawPrimary);
+  if (primary !== rawPrimary) {
+    console.warn(`⚠️ 主模型 ${rawPrimary} 已知失效/下线，改用 ${primary}`);
   }
   const candidates = [primary, ...LLM_FALLBACK_MODELS,
                       ...BUILTIN_FALLBACK_MODELS].filter(Boolean);
@@ -319,17 +346,44 @@ export async function chat(messages, options = {}) {
  * @returns {Promise<object|null>}
  */
 export async function chatJSON(systemPrompt, userPrompt, options = {}) {
-  const data = await chat(
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    { jsonMode: true, ...options }
-  );
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ];
+  let lastErr = null;
 
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('LLM 返回内容为空');
-  return JSON.parse(cleanJSON(content));
+  // ★ 2026-11-07：glm-5.2 在 jsonMode 下偶尔会在 '{' 后面先吐一段说明文字，
+  //   报 "Expected property name in JSON at position 1"，而旧实现直接 JSON.parse 抛出，
+  //   日志里只有一句"AI分析失败"，完全看不出模型到底返回了什么 —— 10 条重跑挂了 5 条
+  //   却无从定位。现在：① 失败时打印原文片段；② 用更强的约束重试一次。
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const data = await chat(messages, { jsonMode: true, ...options });
+    const content = data?.choices?.[0]?.message?.content;
+    // ★ 实测：中转站偶发把 JSON 输出截成 "{\n" / "{\"" 这类 1~2 字符。
+    //   这不是格式问题，清洗救不了，只能重试。单独识别出来，免得日志里
+    //   混着 "Unterminated string" 这种误导性报错。
+    if (!content || String(content).trim().length < 20) {
+      lastErr = new Error('LLM 返回内容过短（疑似服务端截断）');
+      console.warn(`[chatJSON] 第 ${attempt + 1} 次：返回仅 ${String(content || '').length} 字，疑似截断，重试`);
+      continue;
+    }
+    const cleaned = cleanJSON(content);
+    try {
+      return JSON.parse(cleaned);
+    } catch (e) {
+      lastErr = e;
+      console.warn(`[chatJSON] 第 ${attempt + 1} 次解析失败: ${e?.message}`);
+      // 只打前 240 字，既能定位问题，又不会把整段输出刷进日志
+      console.warn('[chatJSON] 模型返回片段:', JSON.stringify(String(content).slice(0, 240)));
+      messages[0] = {
+        role: 'system',
+        content: systemPrompt
+          + ' 输出必须是**单个**合法 JSON 对象：第一个字符是 {，最后一个字符是 }，'
+          + '中间只有标准的键和值。禁止输出任何解释、思考过程、markdown 代码块或前后缀文字。'
+      };
+    }
+  }
+  throw new Error(`LLM 返回无法解析为 JSON: ${lastErr?.message || 'unknown'}`);
 }
 
 /** 剥离模型可能包裹的 markdown 代码块 */

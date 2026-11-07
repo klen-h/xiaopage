@@ -13,11 +13,19 @@
  */
 
 import 'dotenv/config';
-import { CHAT_URL, MODELS_URL, checkLLMHealth, listModels, LLM_MODEL, LLM_FALLBACK_MODELS } from './utils/llm.js';
+import { CHAT_URL, MODELS_URL, checkLLMHealth, listModels, LLM_MODEL,
+         LLM_FALLBACK_MODELS, resolvePrimaryModel } from './utils/llm.js';
+
+// ★ 2026-11-07：`.env` / Secrets 可能残留已下线的 `glm-5.2`，而 `chat()` 会
+//   通过 KNOWN_DEAD 护栏换成 `DEFAULT_MODEL`。诊断必须显示**实际生效**的那个，
+//   否则「配置值」与「生效值」不一致，排障方向会被带偏。
+const EFFECTIVE_MODEL = resolvePrimaryModel();
 
 console.log('=== LLM 连通性诊断 ===');
 console.log('chat endpoint:', CHAT_URL);
 console.log('models endpoint:', MODELS_URL);
+console.log('配置模型 :', LLM_MODEL,
+  EFFECTIVE_MODEL !== LLM_MODEL ? `（已下线 => 实际生效 ${EFFECTIVE_MODEL}）` : '');
 if (LLM_FALLBACK_MODELS.length) console.log('备选模型:', LLM_FALLBACK_MODELS.join(', '));
 console.log('');
 
@@ -28,8 +36,9 @@ try {
     console.log(`可用模型(${models.length}个):`);
     models.forEach(m => console.log('  -', m));
     console.log('');
-    if (!models.includes(LLM_MODEL)) {
-      console.warn(`⚠️ 当前 LLM_MODEL=${LLM_MODEL} 不在列表中，请改成上面任意一个，或设置 LLM_FALLBACK_MODELS`);
+    if (!models.includes(EFFECTIVE_MODEL)) {
+      console.warn(`⚠️ 生效模型 ${EFFECTIVE_MODEL} 不在列表中，请检查 DEFAULT_MODEL`
+        + ` / Secrets 的 LLM_MODEL，或设置 LLM_FALLBACK_MODELS`);
     }
   } else {
     console.warn('⚠️ /models 接口无数据或不可达，跳过模型名校验');

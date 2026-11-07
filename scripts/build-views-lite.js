@@ -41,6 +41,18 @@ function lite(e) {
     title: str(e.title, 200),
     date: e.date ?? '',
     sentiment_score: e.sentiment_score ?? null,
+    // ★ 2026-11-07：把"这条讲哪个市场"一起带出去（新增字段，消费方不认识会直接忽略）。
+    //   不带的话，工作台只能把 A 股 70 分和美股 20 分混在一个均值里——
+    //   正是上游提示词原先缺市场维度导致的同一个问题，只是下沉到了消费侧。
+    //   体积代价：约 60 条 × 40 字节 ≈ 2KB。
+    market: e.market ?? null,
+    direction: e.direction ?? null,
+    // ★ 2026-11-07：把规则版本带到消费侧（stock-scoring 只读 lite）。
+    //   不带的话，下游无法判断某条情绪分是哪版提示词算的，新旧口径混在一张图里
+    //   却无从追溯。消费方不认识会直接忽略，向后兼容。
+    schema_version: e.schema_version ?? null,
+    // 让消费侧也能看出「这条是哪个模型算的」—— 换模型（5.2→5.3）本身就会改变分数
+    llm_model: e.llm_model ?? null,
     disclaimer_level: e.disclaimer_level ?? null,
     // ↓ 消费方入库但卡面不渲染（摘要仍有用：日报/折叠区取它）
     summary: str(e.summary, 300),
@@ -48,7 +60,8 @@ function lite(e) {
     structured: {
       core_views: arr(st.core_views, 3),
       sectors: arr(st.sectors, 10),
-      operation_advice: str(st.operation_advice, 200),
+      // 优先取"原话策略"（advice_literal），旧数据只有 operation_advice，两种都要兼容
+      operation_advice: str(st.advice_literal || st.operation_advice, 200),
       risk_tips: arr(st.risk_tips, 3),
     },
     // ★ 只留一句结论（原文 6.96KB/条 的 deep_analysis 是体积大头）

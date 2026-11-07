@@ -13,6 +13,38 @@ on:
         description: '1=只处理最新一条；0=按列表补齐（主UP最多5个，可用来补历史）'
         required: false
         default: '1'
+      run_mode:
+        # ★ 2026-11-07：提示词/黑话词表改版后需要重跑历史数据。
+        #   本地缺 LLM_API_KEY / BILI_COOKIE（且 Windows 上 yt-dlp 取不到浏览器 Cookie，
+        #   DPAPI 解密失败），只有 Actions Secrets 里齐全 ⇒ 把重跑入口放到这里手动触发。
+        #   推荐两步：先 archive-transcripts 抓 AI 字幕存档（秒级），
+        #            再 reanalyze 复用原文做分析（零转录，只花 LLM 调用）。
+        description: 'check-new=常规；archive-transcripts=只抓字幕存档；reanalyze=用最新提示词重跑历史'
+        required: false
+        default: 'check-new'
+        type: choice
+        options:
+          - check-new
+          - archive-transcripts
+          - reanalyze
+      count:
+        description: 'archive-transcripts / reanalyze 的条数，或逗号分隔的 BV 号'
+        required: false
+        default: '10'
+      whisper:
+        # ★ 2026-11-07：`archiveTranscripts(arg, allowWhisper=false)` 默认**无 AI 字幕就跳过**
+        #   （作者原意：Actions 上 whisper 慢且不可控，不该做成默认路径）。
+        #   但 2026-04~07 那批老视频很可能没有 AI 字幕，需要时才显式打开。
+        #   ⚠️ 打开后每条要下载音频 + 跑 faster-whisper（几分钟/条），
+        #      每批条数必须调小（建议 ≤5），否则会撞 timeout-minutes:120；
+        #      job 被杀后「提交更新」不执行 ⇒ 整批改动全丢。
+        description: '仅 archive-transcripts 有效：1=无 AI 字幕时回退 faster-whisper（慢，慎用）'
+        required: false
+        default: '0'
+        type: choice
+        options:
+          - '0'
+          - '1'
 
 # 定时器每30分钟触发一次，而长视频转录可能跑很久：
 # 同一时间只保留一个运行，避免两个任务同时处理同一视频导致重复推送
@@ -99,7 +131,23 @@ jobs:
           EXTRA_WECHAT_WEBHOOK: ${{ secrets.EXTRA_WECHAT_WEBHOOK }}
           # 可选：faster-whisper 模型大小（base/small/medium），留空默认 base
           WHISPER_MODEL: ${{ secrets.WHISPER_MODEL }}
-        run: node scripts/analyze-video.js --check-new
+        run: |
+          MODE="${{ github.event.inputs.run_mode || 'check-new' }}"
+          COUNT="${{ github.event.inputs.count || '10' }}"
+          WHISPER="${{ github.event.inputs.whisper || '0' }}"
+          # count 是自由输入，且要拼进命令行 —— 先做白名单校验，避免注入
+          if ! [[ "$COUNT" =~ ^[0-9A-Za-z,]+$ ]]; then
+            echo "非法 count: $COUNT（只允许数字、字母、逗号）"; exit 1
+          fi
+          # ★ whisper 仅在显式选 1 时拼进命令；空变量不加引号会自动消失（不传空参数）
+          WHISPER_FLAG=""
+          if [ "$WHISPER" = "1" ]; then WHISPER_FLAG="--whisper"; fi
+          echo "mode=$MODE count=$COUNT whisper=$WHISPER"
+          case "$MODE" in
+            archive-transcripts) node scripts/analyze-video.js --archive-transcripts "$COUNT" $WHISPER_FLAG ;;
+            reanalyze)           node scripts/analyze-video.js --reanalyze "$COUNT" ;;
+            *)                   node scripts/analyze-video.js --check-new ;;
+          esac
 
       - name: 提交更新
         run: |

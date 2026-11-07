@@ -16,6 +16,37 @@ export interface AnalysisItem {
   title: string;
   date: string;
   sentiment_score: number;
+  // ★ 2026-11-07 新增（可选，旧数据没有）：本条讲的是哪个市场 + 逐市场情绪分。
+  //   作用是把"不同市场的情绪"分开，避免拿美股悲观分去和 A 股乐观分直接比。
+  market?: 'a_share' | 'us' | 'hk' | 'other' | 'mixed' | 'unstated';
+  market_evidence?: string[];
+  // 字面提到的市场（不套免责挡箭牌规则）。与 market 不一致 ⇒ 该条用了切割语，
+  // 可用于筛出"受规则影响的条目"，规则若被推翻可精确回滚，不必整库重跑。
+  market_literal?: 'a_share' | 'us' | 'hk' | 'other' | 'mixed' | 'unstated';
+  disclaimer_stacking?: number;
+  // 原文存档（正文在 public/data/transcripts/<bvid>.txt，这里只留指针与元信息）。
+  // 不内联正文的原因：前端是整包 fetch videos.json，加原文会从 6.4MB 涨到 30MB+。
+  transcript_ref?: string;
+  transcript_chars?: number;
+  transcript_source?: string;
+  transcript_saved_at?: string;
+  direction?: '看多' | '看空' | '中性' | '未表态';
+  direction_quote?: string[];
+  confidence?: number;
+  sentiment_note?: string;
+  // 命中的"黑话"及其指向（词表见 scripts/lexicon.json）。
+  // 单独留痕而不是直接改 market：既保住字面记录，又让误判可回溯。
+  code_words?: Array<{
+    term: string;
+    quote: string;
+    resolved_market: string;
+    note?: string;
+  }>;
+  sentiment_by_market?: Partial<Record<'a_share' | 'us' | 'hk' | 'other', {
+    score: number;
+    basis: string;
+    quote: string[];
+  }>>;
   disclaimer_level: number;
   summary: string;
   tags: string[];

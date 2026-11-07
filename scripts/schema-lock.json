@@ -1,0 +1,16 @@
+{
+  "frozen_at": "2026-11-07T08:24:01.582Z",
+  "schema_version": "2026-11-07.1+2026-11-07",
+  "content_fingerprint": "fc0573b44ccf25d5",
+  "prompt_version": "2026-11-07.1",
+  "lexicon_version": "2026-11-07",
+  "files": {
+    "scripts/utils/analysis-prompt.js": {
+      "sha256": "7d300df98dfeb0e15ecdd1f9f22cd3250abb923725e4545fcacdd94fe7d74a10"
+    },
+    "scripts/lexicon.json": {
+      "sha256": "c78390ba324c1138c0dd77ee2ebddcaaae9aafc14da36c945ab881ff97f5887e"
+    }
+  },
+  "note": "冻结基线：改判据/输出结构必须递增 PROMPT_VERSION 或 lexicon.version 并全量重跑；仅改注释也要重新执行 schema-freeze.js --write 更新指纹。"
+}

@@ -18,8 +18,15 @@ import fs from 'fs';
 import path from 'path';
 import axios from 'axios';
 import 'dotenv/config';
-import { chat, chatJSON, printLLMConfig, checkLLMHealth } from './utils/llm.js';
+import { chat, chatJSON, printLLMConfig, checkLLMHealth,
+         resolvePrimaryModel } from './utils/llm.js';
 import { truncateByBytes } from './utils/text.js';
+// ★ 2026-11-07：提示词抽到 utils/analysis-prompt.js 统一维护（原因见该文件头注释）
+import { buildAnalysisPrompt, ANALYSIS_SYSTEM_PROMPT } from './utils/analysis-prompt.js';
+// ★ 2026-11-07：规则版本由代码注入每条数据（见 utils/schema-version.js）
+import { currentSchema } from './utils/schema-version.js';
+// ★ 2026-11-07：原文（转录稿）存档 —— 回测要用，且重跑时能省掉重新转录（几分钟/条）
+import { saveTranscript, loadTranscript, hasTranscript, transcriptStats } from './utils/transcripts.js';
 // ★ 2026-10-28：每写一次完整 videos.json，顺手派生一份「消费侧精简版」views-lite.json
 //   （stock-scoring 工作台只读它：6.4MB → ~150KB，见 build-views-lite.js 头注释）
 import { buildViewsLite } from './build-views-lite.js';
@@ -222,6 +229,26 @@ async function main() {
       TARGETS.forEach(t => {
         console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟  只处理最新=${t.onlyLatest ? '是' : '否'}  新鲜度=${t.maxAgeHours > 0 ? Math.round(t.maxAgeHours / 24) + '天' : '不限'}`);
       });
+    } else if (mode === '--reanalyze') {
+      // 提示词改版后重跑历史数据（就地替换，不改日期/位置）
+      //   node scripts/analyze-video.js --reanalyze 10
+      //   node scripts/analyze-video.js --reanalyze BV1xx411c7mD,BV1yy411c7mE
+      await reanalyzeVideos(process.argv[3] || '10');
+    } else if (mode === '--archive-transcripts') {
+      // 只抓 B 站 AI 字幕存档，不调 LLM、默认不跑 whisper（省掉最慢的一步）。
+      //   node scripts/analyze-video.js --archive-transcripts 10 [--whisper]
+      await archiveTranscripts(process.argv[3] || '10', process.argv.includes('--whisper'));
+    } else if (mode === '--text') {
+      // 查看已存档原文：node scripts/analyze-video.js --text BV1xx411c7mD
+      const bv = process.argv[3];
+      const archived = bv ? loadTranscript(bv) : null;
+      if (!archived) {
+        console.log(`未找到原文存档${bv ? `: ${bv}` : '（未指定 bvid）'}`);
+        const st = transcriptStats();
+        console.log(`已存档 ${st.count} 条，共 ${st.mb.toFixed(1)}MB（public/data/transcripts/）`);
+      } else {
+        console.log(archived);
+      }
     } else if (mode?.includes('bilibili.com')) {
       // 加 --text 可手动测试文字解读模式：node scripts/analyze-video.js <链接> --text
       const asText = process.argv[3] === '--text';
@@ -231,12 +258,202 @@ async function main() {
       console.log('用法:');
       console.log('  node scripts/analyze-video.js <B站视频链接>');
       console.log('  node scripts/analyze-video.js --check-new');
+      console.log('  node scripts/analyze-video.js --reanalyze <条数|BV号,逗号分隔>');
+      console.log('  node scripts/analyze-video.js --archive-transcripts <条数|BV号>  # 只抓字幕存档，不调 LLM');
+      console.log('  node scripts/analyze-video.js --text <BV号>      # 查看已存档的转录原文');
       process.exit(1);
     }
   } catch (error) {
     console.error('流程失败:', error.message);
     process.exit(1);
   }
+}
+
+// ==================== 批量抓取原文（不调 LLM）====================
+/**
+ * 只做"字幕 → 原文存档"这一步，用于**预热回测语料**。
+ *
+ * 为什么单独做：一次完整重跑里最贵的不是 LLM，而是转录（下载音频 + faster-whisper
+ * 跑几分钟）。而很多视频 B 站接口直接返回 AI 字幕，一两个 HTTP 请求就能拿到全文。
+ * 把这一步拆出来后：
+ *   · 本地没有 LLM_API_KEY 也能先把原文攒下来；
+ *   · 之后 --reanalyze 直接 loadTranscript 复用，10 条只花 10 次 LLM 调用；
+ *   · 提示词/词表反复改版时，转录成本只付一次。
+ *
+ * 用法：node scripts/analyze-video.js --archive-transcripts 10 [--whisper]
+ * 默认不跑 whisper（无字幕的条目只标出来，留待有环境时再补）。
+ */
+async function archiveTranscripts(arg, allowWhisper = false) {
+  if (!fs.existsSync(DATA_PATH)) {
+    console.error('videos.json 不存在，无法抓取');
+    return;
+  }
+  const data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  const parts = String(arg).split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+  let picks;
+  if (parts.length && /^BV/i.test(parts[0])) {
+    picks = data.filter((v) => parts.includes(v.bvid));
+  } else {
+    picks = data.slice(0, Number(parts[0]) || 10);
+  }
+  if (!picks.length) {
+    console.log('没有可抓取的条目');
+    return;
+  }
+
+  console.log(`\n抓取 ${picks.length} 条原文：B站AI字幕优先${allowWhisper ? '，无字幕回退 whisper' : '（无字幕则跳过）'}，不调用 LLM`);
+  let subtitle = 0, cached = 0, whisper = 0, missing = 0;
+
+  for (const entry of picks) {
+    if (!entry.bvid) continue;
+    if (hasTranscript(entry.bvid)) {
+      console.log(`⏭  已存档，跳过 ${entry.bvid}`);
+      cached++;
+      continue;
+    }
+    const url = `https://www.bilibili.com/video/${entry.bvid}`;
+    let text = null;
+    let source = '';
+    try {
+      text = await downloadBilibiliSubtitle(url);
+      if (text) { source = 'bilibili-subtitle'; subtitle++; }
+    } catch (e) {
+      console.warn(`   ⚠️ 字幕接口异常: ${e?.message || e}`);
+    }
+    if (!text && allowWhisper) {
+      console.log('   无 AI 字幕，尝试 faster-whisper...');
+      text = await downloadAudioAndTranscribe(url, 0);
+      if (text) { source = `whisper-${WHISPER_MODEL}`; whisper++; }
+    }
+    if (!text) {
+      console.log(`—  未取到原文${allowWhisper ? '（字幕与 whisper 均失败）' : '（无 AI 字幕）'}: ${entry.bvid} ${entry.title || ''}`);
+      missing++;
+      await sleep(1000);
+      continue;
+    }
+    try {
+      const saved = saveTranscript(entry.bvid, text);
+      console.log(`✅ ${entry.bvid}  ${String(saved.chars).padStart(6)} 字  ${source}  → ${saved.ref}`);
+    } catch (e) {
+      console.warn(`   ⚠️ 存档失败: ${e?.message || e}`);
+    }
+    await sleep(1000);
+  }
+
+  const st = transcriptStats();
+  console.log(`\n本次：AI字幕 ${subtitle} 条，whisper ${whisper} 条，已有 ${cached} 条，未取到 ${missing} 条`);
+  console.log(`存档合计：${st.count} 条 / ${st.mb.toFixed(1)} MB（public/data/transcripts/）`);
+  console.log('配好 LLM_API_KEY 后执行 --reanalyze，会直接复用这些原文，不再转录。');
+}
+
+// ==================== 重跑历史数据（提示词改版后使用）====================
+/**
+ * 用**当前**提示词重新分析已入库视频，就地替换（保留原 date / _id / 数组位置）。
+ *
+ * 为什么必须有这一步：分析结果里**没有保存转录文本**，所以"只改提示词"不会让旧数据变化，
+ * 重跑只能重新取字幕或重新转录。而新旧口径混在同一张图里，比不重跑更糟 ——
+ * 旧的 sentiment_score 是"没区分市场 + 强制给方向"算出来的，新的才有市场维度，
+ * 两条曲线画在一起根本不可比。
+ *
+ * 逐条落盘：跑 10 条中途挂了，已完成的不会丢，不用从头再来。
+ * 跑之前建议先 `git stash` 或开分支，方便对比新旧分布。
+ */
+async function reanalyzeVideos(arg) {
+  if (!fs.existsSync(DATA_PATH)) {
+    console.error('videos.json 不存在，无法重跑');
+    return;
+  }
+  const data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+  const parts = String(arg).split(',').map(s => s.trim()).filter(Boolean);
+
+  let picks;
+  if (parts.length && /^BV/i.test(parts[0])) {
+    picks = data.filter(v => parts.includes(v.bvid));
+    const missing = parts.filter(b => !data.some(v => v.bvid === b));
+    if (missing.length) console.log(`⚠️ videos.json 中找不到: ${missing.join(', ')}`);
+  } else {
+    picks = data.slice(0, Number(parts[0]) || 10);
+  }
+  if (!picks.length) {
+    console.log('没有可重跑的条目');
+    return;
+  }
+
+  console.log(`\n将重跑 ${picks.length} 条，逐条打印「旧值 → 新值」：`);
+  let okCount = 0;
+  let failCount = 0;
+
+  for (const entry of picks) {
+    const url = `https://www.bilibili.com/video/${entry.bvid}`;
+    console.log(`\n—— ${entry.bvid} ${entry.title || '（无标题）'}`);
+    try {
+      // ★ 优先复用已存档原文：有原文就跳过下载 + whisper（每条省几分钟）
+      let transcript = loadTranscript(entry.bvid);
+      let transcriptSource = 'cached';
+      if (transcript) {
+        console.log(`   复用已存档原文（${transcript.length} 字），跳过转录`);
+      } else {
+        transcript = await downloadBilibiliSubtitle(url);
+        transcriptSource = 'bilibili-subtitle';
+        if (!transcript) {
+          console.log('B站AI字幕不可用，改用 faster-whisper 语音转录...');
+          transcript = await downloadAudioAndTranscribe(url, 0);
+          transcriptSource = `whisper-${WHISPER_MODEL}`;
+        }
+      }
+      if (!transcript) throw new Error('字幕获取失败（B站字幕不可用且语音转录失败）');
+
+      // ★ 2026-11-07：先存档，再送 LLM。
+      //   原来放在 analyzeTranscript 成功之后 —— LLM 一失败（401/限流/超时），
+      //   刚下载的 AI 字幕就白抓了，下次还得重来。现在哪怕分析全挂，原文也在。
+      let archivedMeta = null;
+      try {
+        const saved = saveTranscript(entry.bvid, transcript);
+        archivedMeta = {
+          transcript_ref: saved.ref,
+          transcript_chars: saved.chars,
+          transcript_source: transcriptSource,
+          transcript_saved_at: new Date().toISOString()
+        };
+        console.log(`   📄 原文已存档（${saved.chars} 字，来源 ${transcriptSource}）`);
+      } catch (e) {
+        console.warn('   ⚠️ 原文存档失败（不影响分析结果）:', e?.message || e);
+      }
+
+      const next = await analyzeTranscript(transcript, entry.title, entry.bvid, entry.date);
+      if (!next) throw new Error('AI 分析未返回结果');
+
+      // 老条目（2026-11-07 之前生成的）没有这些字段，重跑一次就补齐
+      if (archivedMeta) Object.assign(next, archivedMeta);
+
+      const idx = data.findIndex(v => v.bvid === entry.bvid);
+      const prev = data[idx];
+      if (prev._id) next._id = prev._id;   // 保留原 _id，避免外链/收藏失效
+      data[idx] = next;
+
+      console.log(`   ✅ ${prev.date}  sentiment ${prev.sentiment_score} → ${next.sentiment_score}`
+        + `  market ${prev.market || '—'} → ${next.market || '—'}`
+        + `  direction ${prev.direction || '—'} → ${next.direction || '—'}`
+        + `  confidence ${next.confidence ?? '—'}`);
+      fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
+      okCount++;
+    } catch (e) {
+      failCount++;
+      console.error(`   ❌ 重跑失败: ${e.message}`);
+      noteFailure(entry.bvid, e.message);
+    }
+    await sleep(3000);
+  }
+
+  try {
+    buildViewsLite();
+  } catch (e) {
+    console.error('[views-lite] 生成失败（不影响主流程）:', e?.message || e);
+  }
+  console.log(`\n重跑完成：成功 ${okCount} 条，失败 ${failCount} 条`);
+  const ts = transcriptStats();
+  console.log(`原文存档：${ts.count} 条，共 ${ts.mb.toFixed(1)}MB（public/data/transcripts/）`);
+  if (okCount > 0) console.log('记得把 public/data/videos.json 与 views-lite.json 一起提交。');
 }
 
 // ==================== 自动检测新视频 ====================
@@ -474,15 +691,37 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
     // 2. 获取字幕（优先B站AI字幕，失败则使用语音转录）
     console.log('正在获取字幕...');
     let transcript = await downloadBilibiliSubtitle(videoUrl);
+    let transcriptSource = 'bilibili-subtitle';   // 原文存档的来源标注
     
     if (!transcript) {
       console.log('B站AI字幕不可用，改用 faster-whisper 语音转录...');
       transcript = await downloadAudioAndTranscribe(videoUrl, durationSec);
+      transcriptSource = `whisper-${WHISPER_MODEL}`;
     }
 
     if (!transcript) {
       console.error('字幕获取失败，跳过此视频');
       return { ok: false, error: '字幕获取失败（B站字幕不可用且语音转录失败）' };
+    }
+
+    // ★ 2026-11-07：原文先落盘，再送去分析。
+    //   顺序很关键 —— 哪怕 LLM 超时/拒答，转录稿也已经存住了；
+    //   下次 --reanalyze 直接复用，不必重新下载音频 + 跑 whisper（一条要几分钟）。
+    const resolvedBvid = bvid || videoUrl.match(/BV\w+/)?.[0] || '';
+    let transcriptMeta = null;
+    if (target.mode === 'json' && resolvedBvid) {
+      try {
+        const saved = saveTranscript(resolvedBvid, transcript);
+        transcriptMeta = {
+          transcript_ref: saved.ref,
+          transcript_chars: saved.chars,
+          transcript_source: transcriptSource,
+          transcript_saved_at: new Date().toISOString()
+        };
+        console.log(`📄 原文已存档: ${saved.ref}（${saved.chars} 字，来源 ${transcriptSource}）`);
+      } catch (e) {
+        console.warn('⚠️ 原文存档失败（不影响分析）:', e?.message || e);
+      }
     }
 
     // 3. AI 分析
@@ -495,6 +734,9 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'))
         : [];
       if (analysisJson) {
+        // 原文引用 + 元信息。正文在 public/data/transcripts/<bvid>.txt，
+        // 这里只留指针 —— 内联会让 videos.json 从 6.4MB 涨到 30MB+（前端整包下载）。
+        if (transcriptMeta) Object.assign(analysisJson, transcriptMeta);
         data.unshift(analysisJson);
         fs.writeFileSync(DATA_PATH, JSON.stringify(data, null, 2), 'utf-8');
         console.log('✅ 成功添加:', analysisJson.title || videoTitle || '未命名');
@@ -697,74 +939,19 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
   console.log('测试AI分析...');
   printLLMConfig();
 
-  const prompt = `你的角色定位是文字内容精确解析员，前提摘要：我发给你的文字内容是李大霄的视频内容，需要你根据文字内容解析出他深层表达的意思，请注意，李大霄在抖音有百万粉丝，他不能明面唱空，不能明面直接给出投资建议。你要挖掘他想表达的真正意思，请将以下视频转录文本分析并输出为指定格式的 JSON:
-
-  输出格式：
-  {
-    "_id": \`lishaoxiao_${date.replace(/-/g, '')}\`,
-    "id": \`${bvid}\`,
-    "bvid": \`${bvid}\`,
-    "title": \`${knownTitle}\`,
-    "date": \`${date}\`,
-    "sentiment_score": "integer, 情绪评分，0-100，50为中性，越高越乐观",
-    "disclaimer_level": "integer, 免责/防火墙等级，1-5，越高越强调'仅供参考/外围市场'",
-    "summary": "string, 200字以内的核心摘要，包含关键数据、观点、策略",
-    "tags": ["string数组", "8个以内关键词标签"],
-    
-    "structured": {
-      "core_views": ["string数组", "逐条列出原文中的核心观点/数据，每条带具体数字"],
-      "sectors": ["string数组", "涉及的行业板块，如证券、银行、石油石化等"],
-      "operation_advice": "string, 操作策略建议，提炼弦外之音，明确多空态度",
-      "risk_tips": ["string数组", "风险警示要点，每条独立成句"]
-    },
-    
-    "deep_analysis": {
-      "strategy": "string, 分析其论证策略：用了什么修辞/类比/心理战术来传达观点",
-      
-      "hidden_meanings": [
-        {
-          "surface": "string, 原文表面表述（引用原话或高度还原）",
-          "deep": "string, 深层含义解读：他真正想说什么？暗示什么？建立什么形象？",
-          "quote": "string, 原文中最能代表该隐含意思的一句话"
-        }
-      ],
-      
-      "logic_pieces": [
-        {
-          "title": "string, 逻辑链条名称，如'负利率历史类比'、'估值分化论'",
-          "content": "string, 该逻辑链的完整推理过程，用箭头→连接"
-        }
-      ],
-      
-      "data_analysis": {
-        "points": ["string数组", "原文中提到的所有具体数据，带单位和涨跌幅"],
-        "subtext": "string, 数据背后的潜台词：数据呈现什么特征？作者想借此说明什么？"
-      },
-      
-      "signals": ["string数组", "从中提取的所有投资信号，格式：'信号名称：具体内容'"],
-      
-      "final_conclusion": "string, 综合结论，300字以内，涵盖观点、策略、风险提示"
-    },
-    
-    "hit_status": "string, 固定值'pending'",
-    
-    "logic_factors": [
-      {
-        "factor_name": "string, 因子名称，如'全球高位'、'业绩分化'",
-        "factor_value": "string, 因子具体数值或状态描述",
-        "weight": "float, 权重0-1，越高影响越大",
-        "direction": "string, 取值仅限：'看涨'/'看跌'/'中性偏多'/'中性偏空'/'中性'",
-        "description": "string, 该因子对市场的具体影响逻辑"
-      }
-    ]
-  }
-
-  文本内容：
-  ${text}`;
+  // ★ 2026-11-07：提示词改由 utils/analysis-prompt.js 统一提供。
+  //   旧版此处内联的提示词以"他不能明面唱空，你要挖掘真正意思"为前缀，
+  //   会系统性地把中性内容读成看空（详见 analysis-prompt.js 头注释）。
+  const prompt = buildAnalysisPrompt({
+    text,
+    date,
+    bvid: bvid || '',
+    knownTitle: knownTitle || ''
+  });
 
   try {
     const result = await chatJSON(
-      "你是一个严格遵循指令的文本解析专家，必须输出完整、详细、不省略任何字段的JSON。",
+      ANALYSIS_SYSTEM_PROMPT,
       prompt,
       {
         temperature: 0.2,
@@ -775,6 +962,14 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
 
     console.log('\n✅ AI分析成功！');
     console.log(JSON.stringify(result, null, 2).slice(0, 1000));
+    // ★ 2026-11-07：规则版本由**代码**注入，绝不让 LLM 填（模型会漏字段 / 会编值）。
+    //   两条写入路径（常规流程 / --reanalyze）都经过本函数，一处注入即全覆盖。
+    //   重跑后 audit 靠它判断「这条是哪版规则算的」，避免第三版口径混进数据。
+    result.schema_version = currentSchema().schema_version;
+    // ★ 2026-11-07：同时记下**实际生效模型**（护栏替换后的值）。
+    //   只记规则版本不够 —— 把 glm-5.2 换成 glm-5.3 本身就会改变打分，
+    //   以后对比分数时必须能区分「规则变了」还是「模型变了」。
+    result.llm_model = resolvePrimaryModel();
     return result;
   } catch (error) {
     console.error('\n❌ AI分析失败:', error.message);
