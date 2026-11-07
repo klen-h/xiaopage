@@ -31,10 +31,15 @@ const DEFAULT_BASE_URL = 'https://token.sensenova.cn/v1';
 //     sensenova-6.8-flash-lite 200 OK   ← 作为备选
 //   ⚠️ 免费中转的配额**按模型算，而且每天会变**（10-28 时 glm-5.2 还是 429、deepseek-flash 是 200）
 //   ⇒ 不要把某一次实测当永久结论；换模型只改这一行即可（模型名不是密钥，入库安全）。
-// ★★ 2026-11-07：SenseNova 公告 `glm-5.2` 于 **2026-11-18 下线**（路由失效、
-//   请求无响应），官方要求改用 11-04 已上线的 `glm-5.3`。
+// ★★ 2026-11-07（实测后修正）：默认**不用 glm-5.3**。
+//   5.3 是推理模型，即便传 `enable_thinking:false`，实测 10232 字提示词下
+//   `reasoning` 仍吃掉 15603 token、`content` 只有 1 个字符（`finish=length`）。
+//   而 `sensenova-6.8-flash-lite` 加 `enable_thinking:false` 后能正常出完整 JSON
+//   （24 字段、含 market），代价是**间歇性空响应**：3 次里可能 1~2 次返回 0 字，
+//   重试可救回（实测第 3 次成功，单次 94~350 秒）。
+//   ⇒ 默认 lite + `chatJSON` 重试 5 次（而非 3 次），空响应时加 3 秒间隔。
 //   上面 10-29 的逐模型实测记录是**历史事实**，保留不改。
-const DEFAULT_MODEL = 'glm-5.3';
+const DEFAULT_MODEL = 'sensenova-6.8-flash-lite';
 // 内置备选：仅当 LLM_FALLBACK_MODELS / LLM_MODEL 未覆盖时追加到候选链尾。
 // 为什么需要：`chat()` 里 429 只会 `break` 到下一个候选，若候选只有 1 个，用完就直接抛错
 //   （`AUTO_FALLBACK` 只在 404「模型下线」时触发，**429 不触发**）。
@@ -45,11 +50,15 @@ const BUILTIN_FALLBACK_MODELS = ['sensenova-6.8-flash-lite'];
 //   一个配额耗尽的模型会先吃掉 **30+60+120+240=450 秒** 的退避才轮到下一个
 //   （用户日志里就是这样：5 次重试全打在同一个模型上，最后 ECONNRESET）。
 //   ⚠️ 与 stock-scoring 的 `_MODEL_KNOWN_DEAD` 保持同一份名单，两处要一起改。
-// ★ 2026-11-07 追加 `glm-5.2`（公告 11-18 下线，属**结构性不可用**）。
-//   本地 `.env` 与 GitHub Actions `secrets.LLM_MODEL` 是**两套配置**，且都可能
-//   残留 glm-5.2；护栏在 `chat()` 里把 dead 的 primary **替换成 DEFAULT_MODEL**，
-//   ⇒ 不必登平台逐个改 env，重跑 522 条也不会跑在快下线的模型上。
-const KNOWN_DEAD_MODELS = ['deepseek-v4-flash', 'deepseek-v4.1-flash', 'glm-5.2'];
+// ★ 2026-11-07 追加（本文件新增的判据，与本项目 `_MODEL_KNOWN_DEAD` 不完全同）：
+//   · `glm-5.2` —— 官方 11-18 下线（结构性不可用）
+//   · `glm-5.3` —— **推理模型 bug**：长提示词下 reasoning 吃光 max_tokens，
+//     content 恒为空；`enable_thinking:false` 对它**无效**（实测 rtok=15603）
+//   · `sensenova-6.8-flash` —— 同上，`reasoning` 吃光额度（实测 content=0）
+//   ⚠️ 这几个不是"限流"，而是**确定性产出空正文**，重试也救不回来（踩过 8 次）。
+//     只有 `sensenova-6.8-flash-lite` 在关 thinking 后能正常输出。
+const KNOWN_DEAD_MODELS = ['deepseek-v4-flash', 'deepseek-v4.1-flash',
+  'glm-5.2', 'glm-5.3', 'sensenova-6.8-flash'];
 
 /** 规范化 BASE_URL，避免 double slash / 缺协议 / 多写路径导致 404 */
 function normalizeBaseUrl(raw) {
@@ -260,6 +269,16 @@ export async function chat(messages, options = {}) {
         max_tokens: maxTokens
       };
       if (jsonMode && !NO_JSON_FORMAT) body.response_format = { type: 'json_object' };
+      // ★★ 2026-11-07：**必须关掉 thinking**，否则长转录下会「烧光 token 但 content 为空」。
+      //   实测（sensenova-6.8-flash-lite + 830 字转录）：
+      //     max_tokens=64/128/256/512/1024/4096/16384 ⇒ **全部** finish=length、content=0
+      //     响应里字段是 `message.reasoning`（不是 `reasoning_content`），
+      //     `usage.completion_tokens_details.reasoning_tokens` 与 completion_tokens 几乎相等。
+      //   ⇒ 推理 token 把额度吃干净，正文一个字都没写。加 `enable_thinking:false` 后
+      //     finish=stop、content 正常，且耗时从 124s 降到 1.5s。
+      //   ⚠️ 本项目所有分析任务都是「长输入 → 大 JSON 输出」，thinking 只会白烧钱，
+      //      结构化转录不需要它。默认关闭；确实需要思考的任务用 LLM_ENABLE_THINKING=1 打开。
+      if (process.env.LLM_ENABLE_THINKING !== '1') body.enable_thinking = false;
 
       try {
         await respectMinInterval();
@@ -356,7 +375,10 @@ export async function chatJSON(systemPrompt, userPrompt, options = {}) {
   //   报 "Expected property name in JSON at position 1"，而旧实现直接 JSON.parse 抛出，
   //   日志里只有一句"AI分析失败"，完全看不出模型到底返回了什么 —— 10 条重跑挂了 5 条
   //   却无从定位。现在：① 失败时打印原文片段；② 用更强的约束重试一次。
-  for (let attempt = 0; attempt < 3; attempt++) {
+  // ★ 2026-11-07：重试 3 → 5。`sensenova-6.8-flash-lite` 是**间歇性**空响应
+  //   （实测 3 次里 1~2 次返回 0 字，第 3 次才成功），3 次不够。
+  const MAX_JSON_ATTEMPTS = Math.max(1, Number(process.env.LLM_JSON_ATTEMPTS || 5));
+  for (let attempt = 0; attempt < MAX_JSON_ATTEMPTS; attempt++) {
     const data = await chat(messages, { jsonMode: true, ...options });
     const content = data?.choices?.[0]?.message?.content;
     // ★ 实测：中转站偶发把 JSON 输出截成 "{\n" / "{\"" 这类 1~2 字符。
@@ -364,7 +386,9 @@ export async function chatJSON(systemPrompt, userPrompt, options = {}) {
     //   混着 "Unterminated string" 这种误导性报错。
     if (!content || String(content).trim().length < 20) {
       lastErr = new Error('LLM 返回内容过短（疑似服务端截断）');
-      console.warn(`[chatJSON] 第 ${attempt + 1} 次：返回仅 ${String(content || '').length} 字，疑似截断，重试`);
+      console.warn(`[chatJSON] 第 ${attempt + 1}/${MAX_JSON_ATTEMPTS} 次：返回仅 ${String(content || '').length} 字，疑似截断，重试`);
+      // ★ 连续打反而更容易继续撞空，每次重试前留 3 秒让服务端缓一下。
+      if (attempt < MAX_JSON_ATTEMPTS - 1) await sleep(3000);
       continue;
     }
     const cleaned = cleanJSON(content);
