@@ -955,7 +955,17 @@ async function analyzeTranscript(text, knownTitle = null, bvid = null, knownDate
       prompt,
       {
         temperature: 0.2,
-        maxTokens: Number(process.env.LLM_JSON_MAX_TOKENS || 16384),  // 思考token也计入，但不再预留 32k，降低 TPM 限流概率
+        // ★★ 2026-11-07：16384 → **32768**。
+        //   旧注释「不再预留 32k，降低 TPM 限流概率」是**错的**：`max_tokens` 只是
+        //   上限，TPM 按**实际** completion_tokens 计费 —— 提高上限不会增加消耗，
+        //   只是给 thinking 留空间。
+        //   实测（1411 字转录 + 完整提示词）：
+        //     lite      → reasoning **7625~11178** token，16384 勉强够；
+        //     glm-5.3 / 6.8-flash → reasoning **16384 全吃光**，content=0。
+        //   所以短提示词下 lite 看着正常，长提示词/长转录就会
+        //   `[chatJSON] 返回仅 0 字` 连撞 5 次 —— 根因是**额度不够装 thinking**，
+        //   不是限流，也不是 `enable_thinking:false` 能解决的（该参数本站不认）。
+        maxTokens: Number(process.env.LLM_JSON_MAX_TOKENS || 32768),
         timeout: 3000000
       }
     );
