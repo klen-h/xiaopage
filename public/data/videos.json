@@ -1,5 +1,91 @@
 [
   {
+    "_id": "lishaoxiao_20261107 20:54",
+    "id": "BV1XC4n6mEpG",
+    "bvid": "BV1XC4n6mEpG",
+    "title": "学生怎么拿书",
+    "date": "2026-11-07 20:54",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.7,
+    "code_words": [
+      {
+        "term": "杠杆/借钱炒股",
+        "quote": "下次别借钱咯",
+        "resolved_market": "不涉及",
+        "note": "明确否定借钱炒股，作为反面教材，不构成市场方向判断"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "market 为 unstated，且原文无明确多空表态，按规则一律填 50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "本条视频为情绪安抚与生活励志内容。李大霄回应粉丝爆仓、亏损、被辞退等困境，反复鼓励“多打几份工”“留得青山在，哪怕没柴烧”“只要活下去，不怕没钱赚”，并建议粉丝坐电梯下来、去图书馆借书，明确否定借钱炒股。全文未提及任何具体市场或指数，无市场方向判断。",
+    "tags": [
+      "情绪安抚",
+      "生活励志",
+      "爆仓",
+      "借钱炒股",
+      "图书馆借书",
+      "留得青山在",
+      "多打几份工",
+      "未表态"
+    ],
+    "structured": {
+      "core_views": [
+        "多打几份工，总能找到活路",
+        "留得青山在，哪怕没柴烧",
+        "只要活下去，不怕没钱赚",
+        "坐电梯下来，一秒都不要犹豫",
+        "图书馆都有的，学生不用买",
+        "下次别借钱咯"
+      ],
+      "sectors": [],
+      "advice_literal": "下次别借钱咯；多打几份工；留得青山在，哪怕没柴烧；只要活下去，不怕没钱赚",
+      "advice_inference": null,
+      "operation_advice": "下次别借钱咯；多打几份工；留得青山在，哪怕没柴烧；只要活下去，不怕没钱赚",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "采用对话式鼓励结构：用周星驰电影台词“你顶得住吗，我顶得住啊”形成问答；反复使用俗语“留得青山在，哪怕没柴烧”作为核心论点；用“老天爷关了一扇门打开一扇窗”类比；用“坐电梯下来”比喻放弃极端念头；用“图书馆借书”作为低成本获取知识的方式。全文为情绪安抚，无市场论证。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "生活态度论证",
+          "content": "多打几份工→总能找到活路→留得青山在→只要活下去，不怕没钱赚"
+        }
+      ],
+      "data_analysis": {
+        "points": [
+          "45元",
+          "35元",
+          "85页",
+          "70万",
+          "两个W（2万）"
+        ],
+        "subtext": "数据均为粉丝亏损金额和书价，非市场数据；原文未提及市场数据。依据：『李老师亏了70万了』『今天两个W没有了』『我买了一本45元的书，现在要不要多买一本35元的书』",
+        "caveats": [
+          "『两个W』为口语表达，指2万元；『85页』可能指书页数，原文未明确"
+        ]
+      },
+      "signals": [],
+      "final_conclusion": "（1）他明说了什么：主要是安抚粉丝，鼓励多打几份工、留得青山在、只要活下去不怕没钱赚，推荐自己的书，建议去图书馆借书，并明确否定借钱炒股。（2）原文未表态的部分：市场方向、投资操作建议均未表态。（3）本条适用的市场：unstated，未提及具体市场。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1XC4n6mEpG.txt",
+    "transcript_chars": 832,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-07T13:31:12.308Z"
+  },
+  {
     "_id": "lishaoxiao_20261107 17:35",
     "id": "BV1mu4E6AEA8",
     "bvid": "BV1mu4E6AEA8",
