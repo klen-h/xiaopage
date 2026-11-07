@@ -269,16 +269,28 @@ export async function chat(messages, options = {}) {
         max_tokens: maxTokens
       };
       if (jsonMode && !NO_JSON_FORMAT) body.response_format = { type: 'json_object' };
-      // ★★ 2026-11-07：**必须关掉 thinking**，否则长转录下会「烧光 token 但 content 为空」。
-      //   实测（sensenova-6.8-flash-lite + 830 字转录）：
-      //     max_tokens=64/128/256/512/1024/4096/16384 ⇒ **全部** finish=length、content=0
-      //     响应里字段是 `message.reasoning`（不是 `reasoning_content`），
-      //     `usage.completion_tokens_details.reasoning_tokens` 与 completion_tokens 几乎相等。
-      //   ⇒ 推理 token 把额度吃干净，正文一个字都没写。加 `enable_thinking:false` 后
-      //     finish=stop、content 正常，且耗时从 124s 降到 1.5s。
-      //   ⚠️ 本项目所有分析任务都是「长输入 → 大 JSON 输出」，thinking 只会白烧钱，
-      //      结构化转录不需要它。默认关闭；确实需要思考的任务用 LLM_ENABLE_THINKING=1 打开。
-      if (process.env.LLM_ENABLE_THINKING !== '1') body.enable_thinking = false;
+      // ★★★ 2026-11-07（第三次修正，终于找对开关）：真正能关掉思考的是
+      //   **`thinking: {type:'disabled'}`** 或 **`reasoning_effort:'none'`**，
+      //   **不是** `enable_thinking`！
+      //
+      //   实测（1411 字转录，直接看 `usage.completion_tokens_details.reasoning_tokens`）：
+      //     基线                       → rtok=16384, 180s, content 空
+      //     `enable_thinking:false`    → rtok=16384, 176s, content 空   ❌ **无效参数**
+      //     `thinking:{type:'disabled'}` → rtok=0, **1.6s**, content 正常  ✅
+      //     `reasoning_effort:'none'`    → rtok=0, **1.6s**, content 正常  ✅
+      //     `reasoning_effort:'minimal'` → rtok=16384                    ❌
+      //     `chat_template_kwargs`       → rtok=16384                    ❌
+      //
+      //   ⚠️ 之前一直用 `enable_thinking`，服务端**静默忽略** ⇒ 每次白烧 ~176 秒且
+      //      content 恒空，看起来像"模型不可用/限流"。判断参数是否生效，
+      //      **只能看 reasoning_tokens 降没降**，不能看 content 有没有出来。
+      //
+      //   本项目所有分析任务都是「长输入 → 大 JSON 输出」，结构化转录不需要思考。
+      //   默认关闭；确实需要思考的任务用 LLM_ENABLE_THINKING=1 打开。
+      if (process.env.LLM_ENABLE_THINKING !== '1') {
+        body.thinking = { type: 'disabled' };
+        body.reasoning_effort = 'none';
+      }
 
       try {
         await respectMinInterval();
