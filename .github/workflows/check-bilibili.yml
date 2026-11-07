@@ -156,7 +156,32 @@ jobs:
           git add public/data/
           if ! git diff --staged --quiet; then
             git commit -m "📊 更新视频分析数据 $(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')"
-            git push
+            # ★★ 2026-11-07：**push 冲突兜底**。
+            #   `concurrency` 只串行化 Actions 之间；只要有人在本地 push 过，
+            #   checkout 的基线就落后 ⇒ `git push` 被拒 ⇒ **整批分析结果全丢**。
+            #   已发生 2 次：`15e4c33`（BV1XC4n6mEpG 白跑一遍）、更早那次丢了
+            #   3 个文件。之前只是 `exit 1` 标红，数据不会自己回来。
+            #   策略：rebase 后重试 3 次；rebase 冲突则以**本次分析结果**为准
+            #   做一次 merge（数据文件用 -X ours 保留本地）。
+            pushed=0
+            for i in 1 2 3; do
+              if git push origin HEAD:main; then
+                echo "✅ push 成功（第 $i 次尝试）"
+                pushed=1
+                break
+              fi
+              echo "⚠️ push 被拒（第 $i 次），rebase 后重试"
+              if ! git pull --rebase --autostash origin main; then
+                echo "⚠️ rebase 冲突，改用 merge，数据文件以本次结果为准"
+                git rebase --abort || true
+                git pull --no-rebase --no-edit -X ours origin main || true
+              fi
+              sleep 3
+            done
+            if [ "$pushed" = "0" ]; then
+              echo "::error::push 连续 3 次失败，本次分析结果未能提交（仅在 runner 上，会丢失）"
+              exit 1
+            fi
           else
             echo "没有新数据，跳过提交"
           fi
