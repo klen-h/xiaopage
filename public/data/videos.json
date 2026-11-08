@@ -1,5 +1,108 @@
 [
   {
+    "_id": "lishaoxiao_20261108 18:07",
+    "id": "BV1KgWn68ErU",
+    "bvid": "BV1KgWn68ErU",
+    "title": "如何完成价值投资的蜕变",
+    "date": "2026-11-08 18:07",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.5,
+    "code_words": [
+      {
+        "term": "做个好人",
+        "quote": "做个好人，做个好人，星星之火也能温暖他人",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断"
+      },
+      {
+        "term": "好股票",
+        "quote": "好东西，坐看云起云落，坐看云起时，稳坐钓鱼台",
+        "resolved_market": "不涉及",
+        "note": "选股口径，非市场方向"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "全文无明确多空表述，基准分50",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "李大霄以工薪阶层到资本家的心态转变为比喻，强调投资需要从几分钟耐心提升到长期耐心。他呼吁上市公司给核心员工发股票，使老板与员工一条心。他提到自己的书《李大霄投资战略》有15个条件，建议读者打开书学习。最后以'做个好人，星星之火也能温暖他人'作结。全文未提及具体市场、指数或资产。",
+    "tags": [
+      "价值投资",
+      "心态转变",
+      "工薪阶层",
+      "资本家",
+      "股权激励",
+      "长期持有",
+      "做个好人"
+    ],
+    "structured": {
+      "core_views": [
+        "股票市场是资本家，工薪阶层到资本家很难，心态不一样",
+        "资本家今年收成好收入丰厚，收成不好看明年，明年不行看后年，后年不行看后10年",
+        "工薪阶层按分钟、按日、按月、按年计算收入，耐心从几分钟到长期",
+        "呼吁上市公司给忠心耿耿的干部和核心员工发股票，使老板与员工一条心",
+        "有书的打开书，有书的打开15个条件"
+      ],
+      "sectors": [],
+      "advice_literal": "做个好人，做个好人，星星之火也能温暖他人",
+      "advice_inference": null,
+      "operation_advice": "做个好人，做个好人，星星之火也能温暖他人",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "以工薪阶层与资本家的收入周期对比为类比，从几分钟到日薪、月薪、年薪、股权，逐步升级耐心层级，强调长期持有的心态转变。结尾用'做个好人'作情绪安抚。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "耐心层级论",
+          "content": "工薪阶层按分钟结算（送快递5分钟赚2块）→ 按日结算（打零工500一天）→ 按月结算（月薪）→ 按年结算（年薪）→ 股权激励 → 长期耐心 → 从工薪阶层蜕变为资本家"
+        }
+      ],
+      "data_analysis": {
+        "points": [
+          "送快递5分钟一单赚2块",
+          "滴滴司机5分钟一单赚10块",
+          "高级工一天500"
+        ],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了：投资需要从几分钟耐心提升到长期耐心，呼吁上市公司给核心员工发股票，建议读者打开他的书学习15个条件，最后以'做个好人'作结。(2) 原文未表态：未提及任何具体市场、指数或资产，未给出看多或看空判断。(3) 本条适用的市场：unstated，无明确市场指向。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [
+      {
+        "factor_name": "耐心层级",
+        "factor_value": "从几分钟到长期",
+        "weight": 0.8,
+        "direction": "中性",
+        "description": "以工薪阶层到资本家的心态转变为比喻，强调长期耐心，但未涉及具体市场方向",
+        "quote": "从几分钟的耐心到一天的耐性，到1月的耐性，到一年的耐性到长期耐性"
+      },
+      {
+        "factor_name": "股权激励",
+        "factor_value": "呼吁上市公司给核心员工发股票",
+        "weight": 0.2,
+        "direction": "中性",
+        "description": "建议上市公司给忠心耿耿的干部和核心员工发股票，使老板与员工一条心，但未涉及市场方向",
+        "quote": "我是呼吁上市公司，咱们得多给忠心耿耿的干部发点股票，咱们多给员工，核心员工发点股票"
+      }
+    ],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1KgWn68ErU.txt",
+    "transcript_chars": 1215,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-08T10:32:30.619Z"
+  },
+  {
     "_id": "lishaoxiao_20261107 20:54",
     "id": "BV1XC4n6mEpG",
     "bvid": "BV1XC4n6mEpG",
