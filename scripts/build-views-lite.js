@@ -7,7 +7,7 @@
  *     deep_analysis  3367.6KB (55%)
  *     logic_factors   885.3KB (14.5%)
  *     structured      831.3KB (13.6%)
- *   stock-scoring 工作台只消费其中很小一部分（卡片文案 final_conclusion、情绪分、
+ *   stock-scoring 工作台只消费其中很小一部分（卡片文案 summary、情绪分、
  *   板块、操作建议、3 条因子），却要为此下载 6.4MB —— 国内网络实测 59 秒，
  *   还占 Render 出网流量。
  *   ⇒ 另出一份**只含消费侧字段 + 只留最近 N 条**的 lite 文件（约 150KB，降 97%）。
@@ -54,7 +54,9 @@ function lite(e) {
     // 让消费侧也能看出「这条是哪个模型算的」—— 换模型（5.2→5.3）本身就会改变分数
     llm_model: e.llm_model ?? null,
     disclaimer_level: e.disclaimer_level ?? null,
-    // ↓ 消费方入库但卡面不渲染（摘要仍有用：日报/折叠区取它）
+    // ★ 2026-11-08：这是工作台「李大霄视角卡」的**主文案**（已与 xiaopage 企微同口径）。
+    //   旧注释写"卡面不渲染"已不成立 ⇒ 别裁掉、别截短。
+    //   上游提示词要求 summary ≤200 字，300 只是防御上限；改动前先确认消费侧。
     summary: str(e.summary, 300),
     tags: arr(e.tags, 10),
     structured: {

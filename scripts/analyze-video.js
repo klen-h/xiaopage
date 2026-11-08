@@ -249,6 +249,17 @@ async function main() {
       } else {
         console.log(archived);
       }
+    } else if (mode === '--preview-push') {
+      // 本地预览企微文案（不发送）：node scripts/analyze-video.js --preview-push [BV号]
+      const bv = process.argv[3];
+      const d = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'));
+      const e = bv ? d.find((v) => v.bvid === bv) : d[0];
+      if (!e) {
+        console.log(`未找到条目${bv ? `: ${bv}` : ''}`);
+      } else {
+        console.log(`--- ${e.bvid} 将推送的企微文案（未发送）---\n`);
+        console.log(buildWechatContent(e.title || '未命名', e.bvid, e));
+      }
     } else if (mode?.includes('bilibili.com')) {
       // 加 --text 可手动测试文字解读模式：node scripts/analyze-video.js <链接> --text
       const asText = process.argv[3] === '--text';
@@ -261,6 +272,7 @@ async function main() {
       console.log('  node scripts/analyze-video.js --reanalyze <条数|BV号,逗号分隔>');
       console.log('  node scripts/analyze-video.js --archive-transcripts <条数|BV号>  # 只抓字幕存档，不调 LLM');
       console.log('  node scripts/analyze-video.js --text <BV号>      # 查看已存档的转录原文');
+      console.log('  node scripts/analyze-video.js --preview-push [BV号]  # 预览企微文案，不发送');
       process.exit(1);
     }
   } catch (error) {
@@ -749,7 +761,8 @@ async function processSingleVideo(videoUrl, knownTitle = null, bvid = null, know
         // 推送到 stock-scoring 工作台（新解读 + 前2条自愈；fail-soft，见 notifyScoring 注释）
         await notifyScoring([analysisJson, ...data.slice(1, 3)]);
         // 企微通知
-        await pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson.structured?.operation_advice || '无操作建议');
+        // 传整条：推送正文取 summary，附 market / direction（详见 buildWechatContent 注释）
+        await pushWechat(analysisJson.title || videoTitle || '未命名', bvid, analysisJson);
       } else {
         console.error('处理失败');
         return { ok: false, error: 'AI 分析未返回结果（模型空响应/超时，见上方 llm 日志）' };
@@ -1076,10 +1089,52 @@ async function pushWechatPlain(title, bvid, body, target) {
   return sendWechatMarkdown(header + body, target.webhook || WECHAT_WEBHOOK);
 }
 
-/** 李大霄 JSON 模式推送：带站内分析页链接 */
-async function pushWechat(title, bvid, operationAdvice) {
+/**
+ * 组装李大霄企微推送文案（纯函数，便于本地 --preview-push 预览，不会真的发消息）。
+ *
+ * ★ 2026-11-08：正文改取 summary，不再取 structured.operation_advice。
+ *   提示词改版后 operation_advice 已降级为 advice_literal 的**兼容字段**，
+ *   值是"他明说的操作原话"——实测推送出来常是「做个好人」「原文未提及」，
+ *   当消息正文几乎没有信息量。字段名、类型都没变（纯语义漂移），所以一直不报错，
+ *   直到人看到企微消息才发现。summary 是 200 字以内、有原话依据的概述，才是给人看的。
+ *
+ *   另附一行 market / direction / sentiment_score：新口径下"讲哪个市场"是关键信息，
+ *   不写出来，读者会把「美股看空」当成「A股看空」——正是这次改提示词要解决的问题。
+ */
+function buildWechatContent(title, bvid, entry = {}) {
   const url = `https://xiaopage.1213962718.workers.dev/#/analysis/${bvid}`;
-  return sendWechatMarkdown(`[${title}](${url})\n${operationAdvice}`);
+  const body = String(entry.summary || '').trim()
+    || String(entry.structured?.operation_advice || '').trim()
+    || '暂无摘要';
+
+  const marketLabel = {
+    a_share: 'A股', us: '美股', hk: '港股',
+    other: '其他', mixed: '多市场', unstated: '未指明'
+  };
+  const bits = [];
+  if (entry.market) bits.push(`市场：${marketLabel[entry.market] || entry.market}`);
+  if (entry.direction) bits.push(`方向：${entry.direction}`);
+  if (Number.isFinite(entry.sentiment_score)) bits.push(`情绪：${entry.sentiment_score}/100`);
+  const meta = bits.length ? `\n> ${bits.join('｜')}` : '';
+
+  // 原话策略确有实质内容时才附一行。只在**新口径**条目（有 market）上加：
+  // 旧条目的 operation_advice 是模型推断，标成"原话要点"会误导。
+  // 「做个好人」「星星之火也能温暖」在词表里属于情绪安抚句（star_fire /
+  // spare_money_creed），不是操作要点 —— 去掉这些套话后再判断有没有实质内容，
+  // 否则企微里会推一句「做个好人，做个好人，星星之火也能温暖他人」的空话。
+  const advice = String(entry.structured?.advice_literal || entry.structured?.operation_advice || '').trim();
+  const filler = /做个好人|星星之火也能温暖(?:他人|人心)?|人心定能换得人心|怒涨|[，,；;、。\s]/g;
+  const substance = advice.replace(filler, '').trim();
+  const adviceLine = entry.market && advice !== '原文未提及' && substance.length >= 8
+    ? `\n> 原话要点：${advice.slice(0, 100)}`
+    : '';
+
+  return `[${title}](${url})\n${body}${meta}${adviceLine}`;
+}
+
+/** 李大霄 JSON 模式推送：带站内分析页链接 */
+async function pushWechat(title, bvid, entry = {}) {
+  return sendWechatMarkdown(buildWechatContent(title, bvid, entry));
 }
 
 
