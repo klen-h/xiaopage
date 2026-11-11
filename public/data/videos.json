@@ -1,5 +1,90 @@
 [
   {
+    "_id": "lishaoxiao_20261111 19:52",
+    "id": "BV1srW26NEbJ",
+    "bvid": "BV1srW26NEbJ",
+    "title": "懂得做好人的人不多",
+    "date": "2026-11-11 19:52",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.6,
+    "code_words": [
+      {
+        "term": "余钱投资",
+        "quote": "是我说的余钱的年限哦，大家看看书，看看书，余钱的定义",
+        "resolved_market": "不涉及",
+        "note": "出现『余钱』表述，属于投资纪律口号的一部分，不指向具体市场。"
+      },
+      {
+        "term": "做个好人",
+        "quote": "做个好人，做个好人，星星之火也能温暖他人",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，不是市场判断，不计入多空。"
+      },
+      {
+        "term": "小说里面的内容",
+        "quote": "你每天看着我这个小说，你每天你懂得这个道理",
+        "resolved_market": "不涉及",
+        "note": "『小说』指《李大霄投资战略》第四版，此处用于强调书中的道理，未与『外围市场』叠用，不构成免责堆叠。"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "本条未提及任何具体市场，也未对任何市场给出明确多空表述，按规则记 50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及免责声明。出现『大家看看书』『你每天看着我这个小说』，属于引导读者看书，不是免责切割语。",
+    "summary": "本条为对粉丝的夸赞与情绪安抚。核心内容：夸赞一位自称『真粉』的观众悟性高，称其『10万个人可能就出一个』，并修正『好人就是放10年也能睡好吃好』的说法，改为『余钱的年限』，引导大家看书了解余钱定义。随后描述懂得道理后家庭幸福、工作顺利的美好图景，最后以『做个好人，做个好人，星星之火也能温暖他人』收尾。全文未提及任何具体市场、指数或资产，无方向性表态。",
+    "tags": [
+      "情绪安抚",
+      "余钱投资",
+      "做个好人",
+      "粉丝互动",
+      "投资纪律"
+    ],
+    "structured": {
+      "core_views": [
+        "好人就是放10年也能睡得着，吃得好，坏人就是天天折磨你",
+        "是我说的余钱的年限哦，大家看看书，看看书，余钱的定义",
+        "10万个人可能就出一个，百万个人出一个能懂下一本书",
+        "做个好人，做个好人，星星之火也能温暖他人"
+      ],
+      "sectors": [],
+      "advice_literal": "余钱投资，做个好人，星星之火也能温暖他人",
+      "advice_inference": null,
+      "operation_advice": "余钱投资，做个好人，星星之火也能温暖他人",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "本条以夸赞粉丝、描述美好愿景为主，属于情绪安抚与价值观输出。结构为：先夸赞一位自称『真粉』的观众，再修正自己之前『放10年』的说法为『余钱的年限』，引导看书，最后以『做个好人，星星之火也能温暖他人』收尾。无市场数据、无类比、无反问。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "好人定义与余钱年限",
+          "content": "好人就是放10年也能睡好吃好 → 修正为『余钱的年限』 → 引导大家看书了解余钱定义 → 强调时间长短『不敢讲』"
+        }
+      ],
+      "data_analysis": {
+        "points": [],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了什么：夸赞一位自称『真粉』的观众悟性高，称其『10万个人可能就出一个』；修正『好人就是放10年也能睡好吃好』为『余钱的年限』，引导大家看书；描述懂得道理后家庭幸福、工作顺利；最后以『做个好人，星星之火也能温暖他人』收尾。(2) 原文未表态的部分：未提及任何具体市场、指数、资产，未给出任何看多或看空表述，未提及风险。(3) 本条适用的市场：无。本条为情绪安抚与投资纪律宣传，不涉及市场方向判断。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1srW26NEbJ.txt",
+    "transcript_chars": 637,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-11T12:01:15.007Z"
+  },
+  {
     "_id": "lishaoxiao_20261111 19:09",
     "id": "BV1U5Wm6rEpY",
     "bvid": "BV1U5Wm6rEpY",
