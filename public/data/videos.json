@@ -1,5 +1,82 @@
 [
   {
+    "_id": "lishaoxiao_20261112 20:44",
+    "id": "BV14MWR6fESA",
+    "bvid": "BV14MWR6fESA",
+    "title": "写文章要通俗易懂",
+    "date": "2026-11-12 20:44",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.7,
+    "code_words": [
+      {
+        "term": "钻石底",
+        "quote": "你的钻石名字不错",
+        "resolved_market": "不涉及",
+        "note": "历史标签，此处仅作为名字评价出现，不构成对当前市场的方向判断"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "全文未涉及任何具体市场或指数，无多空表述，按规则取基准分 50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "本条视频为李大霄谈写作风格与情感主播角色。他提到自己作为市场30多年的老人，在网友上天台吹风时选择做情感主播，给予关怀和同理心。他回忆好友评价其笔名『婴儿底』比『钻石底』更有温度，并强调自己的书文字简单易懂，小学生也能读，认为这是用心良苦。全文未提及具体市场、指数或投资建议。",
+    "tags": [
+      "写作风格",
+      "情感主播",
+      "婴儿底",
+      "钻石底",
+      "通俗易懂",
+      "市场老人",
+      "关怀",
+      "责任"
+    ],
+    "structured": {
+      "core_views": [
+        "我毕竟是在这个市场30多年了",
+        "很多网友刚进来，他不明白，总得有一个在市场30多年的人去告诉他",
+        "我做一个政券老人，我这个时候都不站出来，有谁愿意站出来呢",
+        "我的书文字简单易懂，小学生也能读",
+        "我水平比较低，所以写出来的东西，小学生都能读懂"
+      ],
+      "sectors": [],
+      "advice_literal": "原文未提及",
+      "advice_inference": null,
+      "operation_advice": "原文未提及",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "以自述和回忆为主，通过好友评价、家长反馈等事例说明自己写作通俗易懂的特点，并引用鲁迅『把文章念给街坊老太能懂，就是好文章』作为类比，强调自己作为市场老人的责任与温度。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "写作通俗易懂的论证",
+          "content": "我水平比较低 → 写出来的东西小学生都能读 → 这是用心良苦 → 对比大学论坛里水平高的人写的只有博士能看"
+        }
+      ],
+      "data_analysis": {
+        "points": [],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了什么：他谈的是自己作为市场老人的责任、情感主播的角色，以及写作要通俗易懂的理念。他提到自己的书连二年级小学生都能读懂，并引用鲁迅的话说明好文章的标准。(2) 原文未表态的部分：全文未提及任何具体市场、指数、板块或投资建议，未对市场方向做任何判断。(3) 本条适用的市场：不适用，本条未指向任何市场。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV14MWR6fESA.txt",
+    "transcript_chars": 759,
+    "transcript_source": "whisper-base",
+    "transcript_saved_at": "2026-11-12T13:01:41.272Z"
+  },
+  {
     "_id": "lishaoxiao_20261112 20:23",
     "id": "BV1GzWR6BE9J",
     "bvid": "BV1GzWR6BE9J",
