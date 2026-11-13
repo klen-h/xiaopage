@@ -1,5 +1,70 @@
 [
   {
+    "_id": "lishaoxiao_20261113 17:20",
+    "id": "BV1XmWi6JEKA",
+    "bvid": "BV1XmWi6JEKA",
+    "title": "不要失掉生活的勇气",
+    "date": "2026-11-13 17:20",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.2,
+    "code_words": [],
+    "sentiment_score": 50,
+    "sentiment_note": "原文未提及任何具体市场或明确多空表述，按规则计为 50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "视频内容为情绪安抚与励志性发言。他提到在困难的时候不要失去生活的勇气，强调许多英雄豪杰都经历过重重困难，关键在于反弹的能力和克服困难的决心。最后提到“下一单看看85页”，但未展开。",
+    "tags": [
+      "情绪安抚",
+      "励志",
+      "克服困难",
+      "反弹能力",
+      "决心"
+    ],
+    "structured": {
+      "core_views": [
+        "在困难的时候不要失去生活的勇气",
+        "许多英雄豪杰都经过了重重的困难",
+        "关键在于反弹的能力和克服困难的决心"
+      ],
+      "sectors": [],
+      "advice_literal": "原文未提及",
+      "advice_inference": null,
+      "operation_advice": "原文未提及",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "采用类比和排比句式，以英雄豪杰历经困难、摔倒又爬起的例子来鼓励听众，强调反弹能力和决心的重要性。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "困难与反弹",
+          "content": "困难是常态 → 英雄豪杰都经历过重重困难 → 关键在于反弹的能力和克服困难的决心"
+        }
+      ],
+      "data_analysis": {
+        "points": [],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了：在困难的时候不要失去生活的勇气，强调反弹能力和克服困难的决心。(2) 原文未表态：未提及任何具体市场、板块或投资建议。(3) 本条适用的市场：未提及，无法判定。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1XmWi6JEKA.txt",
+    "transcript_chars": 188,
+    "transcript_source": "whisper-base",
+    "transcript_saved_at": "2026-11-13T09:32:03.122Z"
+  },
+  {
     "_id": "lishaoxiao_20261113 11:53",
     "id": "BV1fQWv6oEjA",
     "bvid": "BV1fQWv6oEjA",
