@@ -1,5 +1,89 @@
 [
   {
+    "_id": "lishaoxiao_20261116 20:54",
+    "id": "BV1s8sA62EQr",
+    "bvid": "BV1s8sA62EQr",
+    "title": "小书的卖点",
+    "date": "2026-11-16 20:54",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.6,
+    "code_words": [
+      {
+        "term": "做个好人",
+        "quote": "做个好人，做个好人，星星之火也能温暖他人",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断，不计入多空"
+      },
+      {
+        "term": "星星之火也能温暖",
+        "quote": "星星之火也能温暖他人",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断，不计入多空"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "本条无任何明确多空表述，基准分50。出现'做个好人''星星之火也能温暖他人'为情绪安抚句，不计分。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "本条视频为作者宣传其著作《小书》（《李大霄投资战略》），主要回答网友关于书中内容的提问。作者指出书中第15页讲价值投资，第45页讲如何逃顶，两者不冲突。作者提到有网友推荐给四位大学同事购买此书，并建议大学生可在图书馆借阅。作者引用一位网友反馈，称看了书、天天看直播、买了'好人股'账户后'红彤彤的，心里踏实的很'，并强调该反馈'不是托'。视频以'做个好人''星星之火也能温暖他人'的歌词结尾。全篇未提及具体市场行情或投资方向。",
+    "tags": [
+      "书籍宣传",
+      "价值投资",
+      "逃顶",
+      "网友互动",
+      "情绪安抚",
+      "做个好人"
+    ],
+    "structured": {
+      "core_views": [
+        "书中第15页讲价值投资者，第45页讲怎么样逃顶，两者没有冲突",
+        "有网友推荐了四个大学同事购买此书",
+        "大学生不用买书，可以在图书馆里看看有没有",
+        "有网友反馈：看了书、天天看直播、买了好人股账户，账户红彤彤的，心里踏实的很"
+      ],
+      "sectors": [],
+      "advice_literal": "原文未提及",
+      "advice_inference": null,
+      "operation_advice": "原文未提及",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "以网友提问和反馈为主要内容，穿插歌曲歌词'做个好人''星星之火也能温暖他人'作为情绪安抚。整体为书籍宣传和互动内容，无市场分析结构。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "书籍内容区分",
+          "content": "第15页讲价值投资者 → 第45页讲怎么样逃顶 → 两者不冲突，有区别"
+        }
+      ],
+      "data_analysis": {
+        "points": [
+          "第15页",
+          "第45页",
+          "四本"
+        ],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了什么：宣传自己的书《小书》，说明书中第15页讲价值投资、第45页讲逃顶，两者不冲突；提到有网友推荐给四位大学同事购买，建议大学生去图书馆借阅；引用网友反馈称看了书、买了好人股账户后'心里踏实的很'，并强调该反馈不是托。(2) 原文未表态的部分：未提及任何具体市场行情、指数点位、板块方向或操作建议。(3) 本条适用的市场：无明确市场指向，market 为 unstated。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1s8sA62EQr.txt",
+    "transcript_chars": 364,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-16T13:02:16.879Z"
+  },
+  {
     "_id": "lishaoxiao_20261116 20:30",
     "id": "BV1vusA6cENj",
     "bvid": "BV1vusA6cENj",
