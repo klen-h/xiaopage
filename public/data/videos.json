@@ -1,5 +1,92 @@
 [
   {
+    "_id": "lishaoxiao_20261120 21:19",
+    "id": "BV1kgyxzqEPW",
+    "bvid": "BV1kgyxzqEPW",
+    "title": "呼吁设立投资者关怀热线",
+    "date": "2026-11-20 21:19",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.6,
+    "code_words": [
+      {
+        "term": "做好人买好股",
+        "quote": "做好人买好股，做好人买好股",
+        "resolved_market": "不涉及",
+        "note": "投资纪律口号，非市场方向判断"
+      },
+      {
+        "term": "好股票",
+        "quote": "那买了好股票很舒服啊，买了股好股票一点都不慌啊",
+        "resolved_market": "不涉及",
+        "note": "选股口径，非市场方向判断"
+      },
+      {
+        "term": "星星之火也能温暖",
+        "quote": "做个好人，做个好人，星星之火也能温暖他人",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "原文未提及具体市场方向，无明确多空表述，按规则取基准分50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "李大霄呼吁设立投资者心理热线、投资者关怀中心或救济中心，以帮助陷入困境的散户投资者。他提到自己因接触大量负面情绪而承受压力，因此写了一本书《李大霄投资战略》，希望更多人通过阅读获得帮助。他反复强调“做好人买好股”，并鼓励投资者保持理性。",
+    "tags": [
+      "投资者关怀",
+      "心理热线",
+      "投资战略",
+      "做好人买好股",
+      "散户保护",
+      "情绪安抚",
+      "书籍推广"
+    ],
+    "structured": {
+      "core_views": [
+        "呼吁设立投资者心理热线，或投资者保护基金安排岗位，帮助散户疏导心理问题",
+        "呼吁设立投资者关怀热线、投资者安慰中心、投资者救济中心，提供法律援助或经济援助",
+        "强调个人力量有限，因此写了一本书《李大霄投资战略》，让更多人通过阅读获得帮助",
+        "强调“做好人买好股”，买好股票不慌，能帮助散户摆脱彷徨无助"
+      ],
+      "sectors": [],
+      "advice_literal": "做好人买好股，做个好人，星星之火也能温暖他人",
+      "advice_inference": null,
+      "operation_advice": "做好人买好股，做个好人，星星之火也能温暖他人",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "以心理咨询师崩溃为引子，类比自身承受负面情绪的压力，进而呼吁建立投资者心理支持机制。通过重复“做好人买好股”和“做个好人”等口号，强调书籍的普及作用，并穿插幽默的比喻（如“想少做家务吗，请看李大霄投资战略”）。",
+      "hidden_meanings": [],
+      "logic_pieces": [
+        {
+          "title": "投资者心理支持必要性论证",
+          "content": "心理咨询师因接触大量负面情绪而崩溃 → 李大霄自身也承受类似压力 → 呼吁设立投资者心理热线等机构 → 强调个人力量有限 → 通过书籍《李大霄投资战略》扩大帮助范围"
+        }
+      ],
+      "data_analysis": {
+        "points": [],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了：呼吁设立投资者心理热线、投资者关怀中心或救济中心，并强调自己写了一本书《李大霄投资战略》来帮助散户，反复提倡“做好人买好股”。(2) 原文未表态：未提及具体市场方向、指数点位或行业板块。(3) 本条适用的市场：未明确指向任何市场，属于情绪安抚与投资者关怀类内容。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1kgyxzqEPW.txt",
+    "transcript_chars": 1126,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-20T13:31:40.748Z"
+  },
+  {
     "_id": "lishaoxiao_20261120 20:17",
     "id": "BV1CHypzaE4t",
     "bvid": "BV1CHypzaE4t",
