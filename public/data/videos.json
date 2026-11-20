@@ -1,5 +1,79 @@
 [
   {
+    "_id": "lishaoxiao_20261119 18:32",
+    "id": "BV1QUsh6TE5C",
+    "bvid": "BV1QUsh6TE5C",
+    "title": "做了家务为什么还挨骂",
+    "date": "2026-11-19 18:32",
+    "market": "unstated",
+    "market_literal": "unstated",
+    "market_evidence": [],
+    "disclaimer_stacking": 0,
+    "direction": "未表态",
+    "direction_quote": [],
+    "confidence": 0.9,
+    "code_words": [
+      {
+        "term": "做个好人",
+        "quote": "♪ 做个好人 ♪，♪ 做个好人 ♪，♪ 星星之火也能温暖他人 ♪，♪ 做个好人 ♪",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断"
+      },
+      {
+        "term": "星星之火也能温暖",
+        "quote": "♪ 星星之火也能温暖他人 ♪",
+        "resolved_market": "不涉及",
+        "note": "情绪安抚句，非市场判断"
+      }
+    ],
+    "sentiment_score": 50,
+    "sentiment_note": "本条未涉及任何市场或投资标的，无多空表述，按规则取基准分50。",
+    "sentiment_by_market": {},
+    "disclaimer_level": 1,
+    "disclaimer_note": "原文未提及",
+    "summary": "本条视频为生活类内容，主题是家庭关系与家务态度。李大霄以幽默口吻讲述做家务仍被妻子批评，建议丈夫端正态度、诚恳认错，并提到让妻子看《李大霄投资战略》第85页，配合唱“做个好人”来缓和气氛。全篇未涉及任何市场、指数、股票或投资建议。",
+    "tags": [
+      "家务",
+      "家庭关系",
+      "做个好人",
+      "态度",
+      "幽默",
+      "生活"
+    ],
+    "structured": {
+      "core_views": [
+        "做家务被骂是因为态度不端正，应诚恳认错",
+        "建议让妻子看《李大霄投资战略》第85页",
+        "唱“做个好人”可缓和气氛"
+      ],
+      "sectors": [],
+      "advice_literal": "原文未提及",
+      "advice_inference": null,
+      "operation_advice": "原文未提及",
+      "risk_tips": []
+    },
+    "deep_analysis": {
+      "strategy": "以生活场景（做家务被骂）为引子，用反问和幽默口吻展开，结尾引用自己书中的页码并配以歌词，属于情绪安抚与生活建议，无投资论证结构。",
+      "hidden_meanings": [],
+      "logic_pieces": [],
+      "data_analysis": {
+        "points": [],
+        "subtext": "原文未提及",
+        "caveats": []
+      },
+      "signals": [],
+      "final_conclusion": "(1) 他明说了：做家务被骂是因为态度不端正，应诚恳认错；建议让妻子看《李大霄投资战略》第85页，并唱“做个好人”来缓和气氛。(2) 原文未表态：未提及任何市场、指数、股票或投资建议。(3) 本条适用的市场：不适用，本条为生活类内容，与投资无关。"
+    },
+    "hit_status": "pending",
+    "logic_factors": [],
+    "schema_version": "2026-11-07.1+2026-11-07",
+    "llm_model": "sensenova-6.8-flash-lite",
+    "transcript_ref": "data/transcripts/BV1QUsh6TE5C.txt",
+    "transcript_chars": 389,
+    "transcript_source": "bilibili-subtitle",
+    "transcript_saved_at": "2026-11-20T12:01:21.152Z"
+  },
+  {
     "_id": "lishaoxiao_20261119 16:53",
     "id": "BV1Gcsb6aEVs",
     "bvid": "BV1Gcsb6aEVs",
