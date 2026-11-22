@@ -197,14 +197,28 @@ async function main() {
       console.log('正在进行 LLM 连通性自检...');
       await checkLLMHealth();
 
+      const failures = [];
       for (const target of TARGETS) {
         console.log(`\n========== [${target.name}] UID ${target.uid} (${target.mode === 'json' ? 'JSON归档' : '文字解读'}) ==========`);
         try {
           await checkAndProcessNewVideos(target);
         } catch (error) {
           console.error(`[${target.name}] 处理失败:`, error.message);
+          failures.push({ uid: target.uid, name: target.name, error: String(error.message || error) });
         }
         await sleep(3000);
+      }
+      // ★★ 2026-11-22（用户："按你建议来"）：**全部 UP 都失败 ⇒ 让 job 变红**。
+      //   否则"每 30 分钟 success、一整天零提交"这种静默断流会持续数周没人发现
+      //   （本次 B 站 412 风控就是这么被埋掉的）。部分失败只报警告，不拖垮整批。
+      if (TARGETS.length && failures.length === TARGETS.length) {
+        console.error(`::error::所有 ${TARGETS.length} 个 UP 主都抓取失败，本次无任何产出（查 B 站风控 / BILI_COOKIE）`);
+        for (const f of failures) {
+          console.error(`  - ${f.name || f.uid}: ${f.error.slice(0, 200)}`);
+        }
+        process.exitCode = 1;
+      } else if (failures.length) {
+        console.error(`::warning::${failures.length}/${TARGETS.length} 个 UP 主失败（其余正常，见上方日志）`);
       }
     } else if (mode === '--text-from-file') {
       // 本地调试：跳过下载/转录，直接用现成文本测试文字解读
@@ -482,15 +496,24 @@ async function checkAndProcessNewVideos(target) {
       { encoding: 'utf-8', timeout: 60000 }
     ).trim();
   } catch (error) {
+    const msg = String((error && error.message) || error);
     console.error('获取视频列表失败，请确认 yt-dlp 已安装且网络正常');
     console.error('提示: yt-dlp 可能需要更新: pip install -U yt-dlp');
     console.error('提示: 如果Cookie读取失败，尝试在 .env 中设置 BILI_BROWSER=chrome');
-    return;
+    // ★★ 2026-11-22（用户："按你建议来"）：**这里原来是 `return`（静默吞掉）**。
+    //   实测证据：2026-11-22 本地裸跑 yt-dlp 报
+    //     ERROR: [BilibiliSpaceVideo] 1039025435: Request is blocked by server (412)
+    //   而 Actions 当天每 30 分钟跑一次、**13 次全部 success、零提交** ——
+    //   静默失败的代价是"断流好几天都没人发现"（本次 11-22 整天没数据）。
+    //   ⇒ 改成 throw，由调用方汇总：**全部 UP 都失败才让 job 变红**（避免一个 UP 挂了
+    //     把整批正常 UP 也拖死）。
+    throw new Error(`B站视频列表抓取失败（很可能是风控 412 / Cookie 失效）: ${msg.slice(0, 240)}`);
   }
 
   if (!output) {
-    console.log('未获取到视频列表');
-    return;
+    // 抓到但列表为空：也可能是风控的"软失败"（200 但空页）⇒ 同样上报，不当作"无新视频"
+    console.error('未获取到视频列表（可能被风控返回空页）');
+    throw new Error('B站返回空视频列表（可能被风控）');
   }
 
   // 解析输出: 每行一个BV号，并用B站API获取标题和时长
