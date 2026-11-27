@@ -130,7 +130,15 @@ const TRANSCRIPT_MAX_CHARS = Number(process.env.TRANSCRIPT_MAX_CHARS || 80000);
 // faster-whisper 模型大小：base 最省时间，长视频可换 small / medium 提升准确率
 const WHISPER_MODEL = process.env.WHISPER_MODEL || 'base';
 
-// 只处理最新一条视频（ONLY_LATEST=0 可恢复“按列表逐条补历史”的旧行为）
+// ★ 2026-11-27：拉取的视频列表长度。保持 5 个（用户确认）——定时任务每 30 分钟跑一次，
+//   5 条足够覆盖两次运行之间的增量；拉太多会让每个候选都触发一次 view API，
+//   4 个 UP × 30 条 = 120 次请求，反而容易撞 B 站风控。
+//   真正防漏的关键是**遍历全部候选**（不再 slice(0,1)）与新鲜度只对新增 UP 生效，
+//   而不是把候选池拉大。需要时可用 BILI_PLAYLIST_END 临时调大补历史。
+const BILI_PLAYLIST_END = Number(process.env.BILI_PLAYLIST_END || 5);
+
+// ONLY_LATEST=1（默认）每次只处理 1 条**未处理**视频，但会检查全部候选；
+// ONLY_LATEST=0 每次最多处理 target.maxPerRun 条。两种都不会"只看列表第一条"。
 const ONLY_LATEST = process.env.ONLY_LATEST !== '0';
 // 文字解读模式：只推送发布时间在 N 小时以内的视频（0 = 不限制）。
 // 防止刚添加的 UP 主把很久以前的最新视频当成“新视频”推出来。
@@ -241,7 +249,9 @@ async function main() {
     } else if (mode === '--list-targets') {
       // 查看当前会跑哪些 UP 主：node scripts/analyze-video.js --list-targets
       TARGETS.forEach(t => {
-        console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟  只处理最新=${t.onlyLatest ? '是' : '否'}  新鲜度=${t.maxAgeHours > 0 ? Math.round(t.maxAgeHours / 24) + '天' : '不限'}`);
+        console.log(`${t.name.padEnd(20, ' ')} uid=${t.uid}  模式=${t.mode === 'json' ? 'JSON归档' : '文字解读'}  时长上限=${Math.round(t.maxDuration / 60)}分钟`
+          + `  每次处理=${t.onlyLatest ? '1条未处理' : `最多${t.maxPerRun}条`}`
+          + `  新鲜度=${t.maxAgeHours > 0 ? Math.round(t.maxAgeHours / 24) + '天（仅新UP）' : '不限'}`);
       });
     } else if (mode === '--reanalyze') {
       // 提示词改版后重跑历史数据（就地替换，不改日期/位置）
@@ -492,7 +502,7 @@ async function checkAndProcessNewVideos(target) {
   let output;
   try {
     output = execSync(
-      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end 5 "${spaceUrl}"`,
+      `yt-dlp ${YT_DLP_ARGS} --flat-playlist --print "%(id)s" --playlist-end ${BILI_PLAYLIST_END} "${spaceUrl}"`,
       { encoding: 'utf-8', timeout: 60000 }
     ).trim();
   } catch (error) {
@@ -562,45 +572,61 @@ async function checkAndProcessNewVideos(target) {
 
   console.log(`获取到 ${videos.length} 个视频`);
 
-  // 只处理最新一条：不追历史视频（旧视频不会被逐条补推）
-  let candidates = videos;
-  if (target.onlyLatest) {
-    candidates = videos.slice(0, 1);
-    if (videos.length > 1) {
-      console.log(`只检查最新视频，忽略更早的 ${videos.length - 1} 个`);
-    }
-  }
+  // ★ 2026-11-27（用户："李大霄和战国时代一定要确保视频不要遗漏"）：
+  //   原实现 `videos.slice(0,1)` 只看列表第一条，它已处理就直接跳过，
+  //   后面 4 条**连检查都不检查** —— 日志里"忽略更早的 4 个"看着正常，
+  //   实际是静默漏视频。现在遍历**全部**候选，逐条判断已处理/过期/冷却，
+  //   真正未处理的才会处理。成本由 perRun 控制，不会一次刷屏。
+  const candidates = videos;
+  const perRun = target.onlyLatest ? 1 : target.maxPerRun;
+  console.log(target.onlyLatest
+    ? '本次最多处理 1 条未处理视频；其余候选仍逐条检查，不会永久忽略'
+    : `本次最多处理 ${perRun} 条未处理视频`);
 
   // 读取已处理的视频BV号
   const processedBVs = readProcessedBVs(target);
+  // ★ 新鲜度过滤只针对**首次接入**的 UP 主（防止刚加的 UP 把很久以前的最新视频
+  //   当成新视频推出来）。已有处理记录的 UP 说明早已接入，再按 7 天过滤
+  //   会把"漏掉后补到的旧视频"永久跳过 —— 本次 10 天前的那条就是这样。
+  const isNewUP = processedBVs.length === 0;
+  if (isNewUP && target.maxAgeHours > 0) {
+    console.log(`新 UP 主：启用 ${Math.round(target.maxAgeHours / 24)} 天新鲜度过滤`);
+  } else if (target.maxAgeHours > 0) {
+    console.log(`已接入 UP（已处理 ${processedBVs.length} 条）：跳过新鲜度过滤，只按已处理去重`);
+  }
 
   // ★ 2026-10-30：拆成两个计数 —— 原来只有 `processedCount`，且**成功失败都 ++**，
   //   于是日志打出"新增 4 个视频"而实际一条都没写进 videos.json（用户实测：
   //   4 个全因 HTTP 567 失败，却显示"新增 4 个"）。这种"看起来成功"的日志
   //   比没日志更糟 —— 会让人以为补完了，实际数据仍是缺的。
-  let processedCount = 0;   // **真正写进去的条数**（受 maxPerRun 限制）
+  let processedCount = 0;   // **真正写进去的条数**（受 perRun 限制）
   let attemptedCount = 0;   // 尝试过的条数（含失败，仅用于日志与诊断）
+  let skippedProcessed = 0; // 已处理跳过（用于确认"全部候选都检查过"）
+  let skippedOld = 0;       // 新 UP 的新鲜度过滤跳过
+  let skippedCooldown = 0;  // 失败冷却跳过
   for (const video of candidates) {
     if (processedBVs.includes(video.bvid)) {
       console.log(`跳过已处理: ${video.bvid}`);
+      skippedProcessed++;
       continue;
     }
 
-    // 新鲜度过滤：太久以前发布的视频视为历史内容，不推送
-    if (target.maxAgeHours > 0 && video.date) {
+    // 新鲜度过滤：只对首次接入的 UP 生效，已接入的 UP 不能因此漏视频
+    if (isNewUP && target.maxAgeHours > 0 && video.date) {
       const publishedAt = new Date(video.date.replace(' ', 'T') + ':00+08:00').getTime();
       if (Number.isFinite(publishedAt)) {
         const ageHours = (Date.now() - publishedAt) / 3600000;
         if (ageHours > target.maxAgeHours) {
           console.log(`跳过历史视频(发布于${Math.round(ageHours / 24)}天前，超过${Math.round(target.maxAgeHours / 24)}天): ${video.bvid}`);
+          skippedOld++;
           continue;
         }
       }
     }
 
-    if (processedCount >= target.maxPerRun) {
-      console.log(`⚠️ 本次运行已达处理上限(${target.maxPerRun}个)，剩余视频留待下次: ${video.bvid}`);
-      break;
+    if (processedCount >= perRun) {
+      console.log(`⚠️ 本次已达处理上限(${perRun}个)，剩余 ${candidates.length - skippedProcessed - skippedOld - skippedCooldown - attemptedCount} 条留待下次`);
+      break;   // 剩余候选下次运行会重新拉取并检查，不会永久遗漏
     }
 
     // ★ 2026-10-29：失败冷却期内直接跳过 —— 不跑 yt-dlp、不转录、不调 LLM。
@@ -612,6 +638,7 @@ async function checkAndProcessNewVideos(target) {
       const rec = failures[video.bvid];
       console.log(`跳过（已失败 ${rec.count} 次，冷却还剩 ${Math.ceil(waitMs / 3600000)} 小时，`
         + `上次原因: ${rec.lastError || '未知'}）: ${video.bvid}`);
+      skippedCooldown++;
       continue;
     }
 
@@ -637,7 +664,11 @@ async function checkAndProcessNewVideos(target) {
   // ★ 2026-10-30：把"尝试"和"成功"分开报。原输出 `新增 ${processedCount} 个视频`
   //   在成功失败都计数的实现下，会把 4 个失败报成"新增 4 个"。
   const failedCount = attemptedCount - processedCount;
-  console.log(`\n[${target.name}] 处理完成：成功新增 ${processedCount} 个`
+  console.log(`\n[${target.name}] 处理完成：候选 ${videos.length} 条`
+    + `｜已处理跳过 ${skippedProcessed}`
+    + (skippedOld > 0 ? `｜新UP历史跳过 ${skippedOld}` : '')
+    + (skippedCooldown > 0 ? `｜冷却跳过 ${skippedCooldown}` : '')
+    + `｜成功新增 ${processedCount} 个`
     + (failedCount > 0
       ? `，失败 ${failedCount} 个（未写入 videos.json，下次会重试；连续失败 3 次后进入冷却）`
       : '')
